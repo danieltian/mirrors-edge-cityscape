@@ -1,303 +1,183 @@
 import { RNG } from '../util/rng.js';
 
-// Generates a complete little piece: key, mode, tempo, two chord progressions,
-// and a melody built from motifs (statement, sequence, contrast, return) so it
-// has a hummable theme rather than random notes. Every call gives a new tune.
-//
-// Melodies are worked out in scale-degree space (0 = tonic, 7 = octave), so
-// sequences stay diatonic and chord tones are easy to find.
+// Composes an ambient-electronic piece in the vein of the Mirror's Edge menu
+// music: minor modes, slow harmony with open "cold" voicings, a filtered
+// 16th-note sequence, a pulsing sub, a soft four-on-the-floor, and a short,
+// sparse electric-piano motif soaked in delay. Every call gives a new tune;
+// the arrangement builds, breaks down and returns.
 
 export const MODES = {
   aeolian: [0, 2, 3, 5, 7, 8, 10],
   dorian: [0, 2, 3, 5, 7, 9, 10],
-  ionian: [0, 2, 4, 5, 7, 9, 11],
-  lydian: [0, 2, 4, 6, 7, 9, 11],
-  mixolydian: [0, 2, 4, 5, 7, 9, 10],
+  phrygian: [0, 1, 3, 5, 7, 8, 10],
 };
 const NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
 
 const mod7 = (d) => ((d % 7) + 7) % 7;
 const semis = (scale, d) => scale[mod7(d)] + 12 * Math.floor(d / 7);
 const isDim = (scale, d) => semis(scale, d + 4) - semis(scale, d) === 6;
-const isChordTone = (deg, root) => [0, 2, 4].includes(mod7(deg - root));
 
-function nearestChordTone(deg, root, lo, hi) {
-  for (const off of [0, -1, 1, -2, 2, -3, 3]) {
-    const d = deg + off;
-    if (d >= lo && d <= hi && isChordTone(d, root)) return d;
-  }
-  return Math.max(lo, Math.min(hi, deg));
-}
-
-// Snap to a chord tone, preferring the direction of travel and avoiding a
-// plain repeat of the previous note.
-function snapDir(deg, root, lo, hi, dir, avoid) {
-  const d1 = dir || 1;
-  let fallback = null;
-  for (const off of [0, d1, -d1, 2 * d1, -2 * d1, 3 * d1, -3 * d1]) {
-    const d = deg + off;
-    if (d < lo || d > hi || !isChordTone(d, root)) continue;
-    if (d === avoid) {
-      fallback ??= d;
-      continue;
-    }
-    return d;
-  }
-  return fallback ?? Math.max(lo, Math.min(hi, deg));
-}
-
-// Functional-ish chord movement between scale degrees.
-const NEXT = {
-  0: [[5, 3], [3, 3], [4, 2], [6, 2], [2, 1], [1, 1]],
-  1: [[4, 3], [6, 2], [3, 1], [5, 1]],
-  2: [[5, 2], [3, 3], [6, 2], [0, 1]],
-  3: [[4, 3], [0, 2], [6, 2], [5, 1], [1, 1]],
-  4: [[0, 4], [5, 2], [3, 1], [2, 1]],
-  5: [[3, 3], [2, 2], [6, 2], [4, 2], [0, 1]],
-  6: [[0, 3], [2, 2], [5, 1], [3, 1]],
-};
-
-function progression(rng, scale, start) {
-  const out = [start];
-  while (out.length < 4) {
-    const cur = out[out.length - 1];
-    let opts = NEXT[cur].filter(([d]) => !isDim(scale, d) && !out.includes(d));
-    if (!opts.length) opts = [0, 1, 2, 3, 4, 5, 6].filter((d) => !isDim(scale, d) && !out.includes(d)).map((d) => [d, 1]);
-    out.push(rng.weighted(opts));
-  }
-  return out;
-}
-
-// Pad voicing (root, 3rd, 5th, 7th, 9th) kept near the previous chord.
-function voiceChord(scale, tonic, deg, center) {
-  const pcs = [0, 2, 4, 6, 8].map((k) => semis(scale, deg + k));
-  let notes = pcs.map((p) => {
-    let n = tonic + p;
-    while (n - center > 6) n -= 12;
-    while (center - n > 6) n += 12;
-    return n;
-  });
-  notes = [...new Set(notes)].sort((a, b) => a - b);
-  // Drop the 9th, then the 7th, if they rub a semitone against another tone.
-  for (const drop of [4, 3]) {
-    const n = tonic + pcs[drop];
-    const hits = notes.filter((m) => mod12(m) === mod12(n));
-    for (const h of hits) if (notes.some((m) => m !== h && Math.abs(m - h) === 1)) notes = notes.filter((m) => m !== h);
-  }
-  const bass = 36 + mod12(tonic + pcs[0] - 36);
-  return { deg, pad: notes, bass };
-}
-const mod12 = (n) => ((n % 12) + 12) % 12;
-
-// Phrase rhythms in eighth notes across two bars: [start, length].
-const RHYTHMS = [
-  [[0, 2], [2, 1], [3, 1], [4, 3], [7, 1], [8, 6]],
-  [[0, 1], [1, 1], [2, 2], [4, 2], [6, 2], [8, 7]],
-  [[1, 1], [2, 1], [3, 2], [5, 1], [6, 2], [8, 4], [12, 3]],
-  [[0, 3], [3, 3], [6, 2], [8, 3], [11, 3], [14, 2]],
-  [[0, 4], [4, 2], [6, 2], [8, 7]],
-  [[2, 1], [3, 1], [4, 2], [6, 1], [7, 1], [8, 2], [10, 5]],
-  [[0, 6], [6, 1], [7, 1], [8, 7]],
-  [[0, 2], [2, 2], [4, 1], [5, 1], [6, 2], [8, 3], [11, 1], [12, 3]],
+// Minor-key loops (scale degrees, 0 = i).
+const PROGRESSIONS = [
+  [0, 5],
+  [0, 3],
+  [0, 6],
+  [0, 5, 2, 6],
+  [0, 6, 5, 6],
+  [5, 6, 0, 0],
+  [0, 2, 5, 3],
+  [0, 3, 5, 4],
+  [0, 0, 5, 3],
+  [0, 1, 0, 6], // only used in phrygian (bII)
 ];
 
-function genPhrase(rng, rhythm, root, start, lo, hi) {
-  const notes = [];
-  let cur = start;
-  let prev = 0;
-  const n = rhythm.length;
-  for (let i = 0; i < n; i++) {
-    const [s, l] = rhythm[i];
-    let deg;
-    if (i === 0) deg = nearestChordTone(start, root, lo, hi);
-    else {
-      // Arch-shaped contour: rise through the first half, fall after.
-      let dir = rng.chance(i < n / 2 ? 0.64 : 0.36) ? 1 : -1;
-      let size = rng.weighted([[1, 5], [2, 2.6], [3, 0.8], [4, 0.5], [0, l <= 1 ? 0.6 : 0.15]]);
-      if (Math.abs(prev) >= 3) {
-        dir = -Math.sign(prev); // recover from a leap by step
-        size = 1;
-      }
-      deg = cur + dir * size;
-      if (deg > hi || deg < lo) deg = cur - dir * size;
-      const strong = s % 4 === 0 || l >= 4 || i === n - 1;
-      if (strong) deg = snapDir(deg, root, lo, hi, dir, cur);
-    }
-    notes.push({ s, l, deg });
-    prev = deg - cur;
-    cur = deg;
-  }
-  return notes;
+// Open voicing: root, fifth, ninth, sometimes the third an octave up.
+function voice(scale, tonic, deg, withThird) {
+  const r = semis(scale, deg);
+  // Add the ninth, unless it is a flat ninth (too harsh) - then the octave.
+  const ninth = semis(scale, deg + 8);
+  const pad = [r, semis(scale, deg + 4), ninth - r === 13 ? r + 12 : ninth];
+  if (withThird) pad.push(semis(scale, deg + 9));
+  let notes = pad.map((s) => tonic + s);
+  // Keep the voicing roughly centred on E♭4.
+  const mid = notes.reduce((a, b) => a + b, 0) / notes.length;
+  const shift = Math.round((63 - mid) / 12) * 12;
+  notes = notes.map((n) => n + shift);
+  const root = 36 + ((((tonic + r - 36) % 12) + 12) % 12);
+  // Sequencer tones (in key): root, fifth, octave, ninth (or fifth above the
+  // octave when the ninth would be flat), third an octave up.
+  const fifth = semis(scale, deg + 4) - r;
+  const third = semis(scale, deg + 2) - r;
+  const nine = ninth - r === 13 ? 19 : ninth - r;
+  const seq = [0, fifth, 12, nine, third + 12].map((iv) => root + 12 + iv);
+  return { deg, pad: notes, root, seq };
 }
 
-// Same rhythm and contour, restarted on a chord tone of the new chord near
-// where the previous phrase ended. Prefers a real (diatonic) sequence over a
-// literal repeat, and a start that keeps the whole phrase in range.
-function sequence(rng, phrase, root, near, lo, hi) {
-  const base = phrase[0].deg;
-  const rel = phrase.map((n) => n.deg - base);
-  const minR = Math.min(...rel);
-  const maxR = Math.max(...rel);
-  const avoidRepeat = rng.chance(0.65);
-  let best = null;
-  let bestCost = Infinity;
-  for (let d = near - 5; d <= near + 5; d++) {
-    if (!isChordTone(d, root)) continue;
-    let cost = Math.abs(d - near);
-    if (d + minR < lo - 1 || d + maxR > hi + 1) cost += 20;
-    if (d === base && avoidRepeat) cost += 3;
-    if (cost < bestCost) {
-      bestCost = cost;
-      best = d;
-    }
-  }
-  const out = phrase.map((n) => ({ ...n, deg: best + n.deg - base }));
-  const last = out[out.length - 1];
-  last.deg = nearestChordTone(last.deg, root, lo - 1, hi + 1);
-  return out;
-}
-
-// Four two-bar phrases: a, a' (sequence), b (contrast), a'' (return + cadence).
-function sectionMelody(rng, degs, lo, hi, startNear) {
-  const rA = rng.pick(RHYTHMS);
-  let rB = rng.pick(RHYTHMS);
-  while (rB === rA) rB = rng.pick(RHYTHMS);
-  const p1 = genPhrase(rng, rA, degs[0], startNear, lo, hi);
-  const p2 = sequence(rng, p1, degs[1], p1[p1.length - 1].deg, lo, hi);
-  const p3 = genPhrase(rng, rB, degs[2], p2[p2.length - 1].deg + rng.pick([1, 2, 3]), lo, hi);
-  const p4 = sequence(rng, p1, degs[3], p3[p3.length - 1].deg, lo, hi);
-  // Cadence: land on the chord tone closest to the tonic.
-  const end = p4[p4.length - 1];
-  const tonicNear = Math.round(end.deg / 7) * 7;
-  end.deg = nearestChordTone(tonicNear, degs[3], lo, hi);
-  return { phrases: [p1, p2, p3, p4], motif: p1 };
-}
-
-function flatten(phrases) {
-  const out = [];
-  phrases.forEach((p, k) => {
-    for (const n of p) out.push({ step: k * 32 + n.s * 2, len: n.l * 2, deg: n.deg, vel: n.s % 4 === 0 ? 1 : 0.82 });
-  });
-  return out;
-}
-
-// Light ornamentation for repeats: neighbour-note turns on long notes and the
-// odd split eighth.
-function vary(rng, notes) {
-  const out = [];
-  for (const n of notes) {
-    if (n.len >= 8 && rng.chance(0.35)) {
-      out.push({ ...n, len: n.len - 2 });
-      out.push({ step: n.step + n.len - 2, len: 2, deg: n.deg + rng.pick([1, -1]), vel: 0.72 });
-    } else if (n.len === 2 && rng.chance(0.18)) {
-      out.push({ ...n, len: 1 });
-      out.push({ step: n.step + 1, len: 1, deg: n.deg + rng.pick([1, -1, 2]), vel: 0.7 });
-    } else out.push({ ...n });
-  }
-  return out;
-}
-
-function arpPattern(rng) {
-  const len = rng.pick([8, 8, 16]);
+function sequencePattern(rng) {
+  const density = rng.range(0.5, 0.85);
+  const accents = rng.pick([
+    [0, 3, 6, 10, 12],
+    [0, 4, 8, 12],
+    [0, 3, 8, 11],
+    [0, 6, 10],
+  ]);
   const pat = [];
-  let i = rng.int(0, 3);
-  for (let k = 0; k < len; k++) {
-    if (k > 0 && rng.chance(0.18)) {
+  for (let i = 0; i < 16; i++) {
+    if (i > 0 && !rng.chance(density)) {
       pat.push(null);
       continue;
     }
-    i = Math.max(0, Math.min(7, i + rng.pick([-2, -1, 1, 1, 2, 3])));
-    pat.push(i);
+    const idx = i === 0 ? 0 : rng.weighted([[0, 4], [1, 3], [2, 3], [3, 1.2], [4, 1]]);
+    pat.push({ idx, acc: accents.includes(i) ? 1 : 0.55 });
   }
   return pat;
 }
 
-const DRUMS = {
-  steady: { kick: [0, 8], clap: [4, 12], hat: [2, 6, 10, 14] },
-  broken: { kick: [0, 6, 10], clap: [4, 12], hat: [2, 6, 10, 14] },
-  sparse: { kick: [0, 10], clap: [12], hat: [2, 6, 10, 14] },
-  lift: { kick: [0, 4, 8, 12], clap: [4, 12], hat: [2, 6, 10, 14, 15] },
+// A short motif (3-5 notes over two bars) on a minor-pentatonic palette.
+const KEY_RHYTHMS = [
+  [0, 6, 12],
+  [0, 4, 10, 16],
+  [0, 3, 6, 14],
+  [0, 8, 12, 20, 22],
+  [2, 8, 14],
+  [0, 6, 12, 18, 24],
+  [0, 10, 16],
+];
+function keysMotif(rng) {
+  const rhythm = rng.pick(KEY_RHYTHMS);
+  let i = rng.pick([3, 4, 5]); // start around the fifth / octave
+  const notes = [];
+  rhythm.forEach((step, k) => {
+    if (k > 0) i = Math.max(0, Math.min(8, i + rng.weighted([[-1, 3], [1, 2.5], [-2, 1], [2, 1], [0, 0.8]])));
+    notes.push({ step, idx: i, vel: k === 0 ? 1 : rng.range(0.65, 0.9) });
+  });
+  return notes;
+}
+
+const KICKS = {
+  four: [0, 4, 8, 12],
+  half: [0, 10],
+  broken: [0, 6, 8, 14],
 };
+
+function hatPattern(rng) {
+  const v = [];
+  for (let i = 0; i < 16; i++) {
+    if (i % 4 === 2) v.push(0.9); // off-beat eighths
+    else if (i % 2 === 1) v.push(rng.chance(0.55) ? rng.range(0.25, 0.45) : 0);
+    else v.push(i % 4 === 0 ? 0 : 0.3);
+  }
+  return v;
+}
 
 export function composeSong(seed = Math.floor(Math.random() * 2 ** 31)) {
   const rng = new RNG(seed);
   const mode = rng.weighted([
-    ['aeolian', 4],
+    ['aeolian', 5],
     ['dorian', 3],
-    ['ionian', 2],
-    ['lydian', 1],
-    ['mixolydian', 1],
+    ['phrygian', 1.5],
   ]);
   const scale = MODES[mode];
-  const pc = rng.pick([2, 4, 5, 7, 9, 0, 10, 3]);
-  const tonic = 60 + pc; // pad register
-  const lead = pc < 2 ? 72 + pc : 60 + pc; // melody tonic, D4..C#5
-  const bpm = Math.round(rng.range(80, 98));
+  const pc = rng.pick([0, 2, 4, 5, 7, 9, 10, 1]);
+  const tonic = 48 + pc;
+  const bpm = Math.round(rng.range(98, 118));
 
-  const degA = progression(rng, scale, rng.chance(0.75) ? 0 : 5);
-  let degB = progression(rng, scale, rng.pick([3, 5, 2, 4].filter((d) => !isDim(scale, d))));
-  if (degB.join() === degA.join()) degB = [...degB].reverse();
+  const usable = PROGRESSIONS.filter((p) => p.every((d) => !isDim(scale, d)) && (mode === 'phrygian' || !p.includes(1)));
+  const prog = rng.pick(usable);
+  const withThird = rng.chance(0.6);
+  const chords = prog.map((d) => voice(scale, tonic, d, withThird && rng.chance(0.8)));
+  const barsPerChord = prog.length === 2 ? 4 : rng.pick([2, 4]);
 
-  let center = 65;
-  const voice = (degs) =>
-    degs.map((d) => {
-      const c = voiceChord(scale, tonic, d, center);
-      center = c.pad.reduce((a, b) => a + b, 0) / c.pad.length;
-      return c;
-    });
-  const chordsA = voice(degA);
-  const chordsB = voice(degB);
+  // Keys palette: minor pentatonic (1 b3 4 5 b7) over two octaves.
+  const keysBase = 60 + pc + (pc > 6 ? -12 : 0);
+  const keysScale = [];
+  for (let o = 0; o < 2; o++) for (const p of [0, 3, 5, 7, 10]) keysScale.push(keysBase + p + 12 * o);
 
-  // Degrees -> MIDI, nudged by an octave if a section strays out of a
-  // comfortable lead register.
-  const toMidi = (notes) => {
-    let out = notes.map((n) => ({ ...n, midi: lead + semis(scale, n.deg) }));
-    const lo = Math.min(...out.map((n) => n.midi));
-    const hi = Math.max(...out.map((n) => n.midi));
-    const shift = hi > 86 && lo - 12 >= 55 ? -12 : lo < 57 && hi + 12 <= 88 ? 12 : 0;
-    if (shift) out = out.map((n) => ({ ...n, midi: n.midi + shift }));
-    return out;
-  };
-  const A = sectionMelody(rng, degA, -2, 7, rng.int(2, 4));
-  const B = sectionMelody(rng, degB, 1, 9, A.phrases[3][A.phrases[3].length - 1].deg + 2);
-  const melA = flatten(A.phrases);
-  const melB = flatten(B.phrases);
+  const kick = rng.weighted([
+    ['four', 5],
+    ['broken', 2],
+  ]);
+  const clap = rng.chance(0.55);
+  const pedal = rng.chance(0.4);
 
-  const beat = rng.chance(0.7);
-  const drums = DRUMS[rng.pick(Object.keys(DRUMS))];
-  const timbre = rng.pick(['glass', 'warm', 'soft']);
-
-  const S = (name, chords, bpc, melody, opts = {}) => ({ name, chords, bpc, melody, ...opts });
+  // Arrangement in bars. seq = [level, cutoff at start, cutoff at end].
+  const S = (name, bars, o) => ({
+    name,
+    bars,
+    keys: false,
+    kick: null,
+    hats: 0,
+    clap: false,
+    bass: 'drone',
+    riser: false,
+    ticks: true,
+    seq: [0.6, 400, 800],
+    ...o,
+  });
   const sections = [
-    S('intro', chordsA, 1, null, { arp: 0.7, bass: false, beat: 0, bright: 0.35 }),
-    S('A', chordsA, 2, toMidi(melA), { arp: 0.55, bass: true, beat: 0, bright: 0.5 }),
-    S('A2', chordsA, 2, toMidi(vary(rng, melA)), { arp: 0.8, bass: true, beat: beat ? 1 : 0, bright: 0.7 }),
-    S('B', chordsB, 2, toMidi(melB), { arp: 0.9, bass: true, beat: beat ? 2 : 0, bells: true, bright: 0.9 }),
+    S('intro', 8, { seq: [0.55, 260, 700], bass: pedal ? 'drone' : 'none' }),
+    S('build', 8, { seq: [0.75, 650, 1300], kick: 'half', hats: 0.45, bass: 'pulse', keys: true, riser: true }),
+    S('main', 16, { seq: [0.85, 1100, 1900], kick, hats: 1, clap, bass: 'pulse', keys: true }),
+    S('breakdown', 8, { seq: [0.5, 500, 380], keys: true, riser: true, ticks: false }),
+    S('main2', 16, { seq: [0.9, 1300, 2300], kick, hats: 1, clap: true, bass: 'pulse', keys: true, keysUp: rng.chance(0.5) }),
+    S('outro', 8, { seq: [0.6, 1400, 300], kick: 'half', hats: 0.3, keys: false }),
   ];
-  if (rng.chance(0.4)) sections.push(S('B2', chordsB, 2, toMidi(vary(rng, melB)), { arp: 0.9, bass: true, beat: beat ? 2 : 0, bells: true, bright: 0.95 }));
-  sections.push(S('A3', chordsA, 2, toMidi(vary(rng, melA)), { arp: 0.9, bass: true, beat: beat ? 2 : 0, double: true, bright: 0.85 }));
-  sections.push(S('outro', chordsA, 2, toMidi(melA.filter((n) => n.step < 32)), { arp: 0.45, bass: true, beat: 0, bright: 0.4 }));
-
-  for (const s of sections) {
-    if (!s.melody) continue;
-    s.byStep = new Map();
-    s.melody.sort((a, b) => a.step - b.step);
-    s.melody.forEach((n, i) => {
-      const next = s.melody[i + 1];
-      n.legato = !!next && next.step === n.step + n.len;
-      s.byStep.set(n.step, n);
-    });
-  }
+  if (rng.chance(0.35)) sections.splice(3, 1); // sometimes no breakdown
 
   return {
     seed,
     name: `${NAMES[pc]} ${mode} · ${bpm} bpm`,
     bpm,
+    chords,
+    barsPerChord,
+    pedal,
+    tonicBass: 36 + pc,
     sections,
-    arp: arpPattern(rng),
-    arpRate: rng.chance(0.7) ? 2 : 1, // eighths or sixteenths
-    drums,
-    timbre,
-    bells: [0, 2, 4, 7, 9, 11].map((d) => lead + 12 + semis(scale, d)),
+    seqPattern: sequencePattern(rng),
+    seqWave: rng.pick(['sawtooth', 'square']),
+    keysScale,
+    motif: keysMotif(rng),
+    kicks: KICKS,
+    hats: hatPattern(rng),
   };
 }

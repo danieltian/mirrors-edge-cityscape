@@ -31,16 +31,22 @@ Dragging, scrolling or pressing a movement key while drifting switches to Explor
 
 ## Music
 
-The soundtrack is generated, not recorded. Every tune is composed on the fly in the spirit of the game's menu music, then synthesised live with Web Audio, so there are no audio files and no copyrighted material.
+The soundtrack is generated, not recorded: ambient electronic in the spirit of the game's menu music. Each tune is composed on the fly and synthesised live with Web Audio, so there are no audio files and no copyrighted material.
 
 `src/audio/composer.js` writes each tune:
-- It picks a key and mode (Aeolian, Dorian, Ionian, Lydian or Mixolydian), a tempo, and two four-chord progressions.
-- It writes a melody built from motifs. Each eight-bar section states a two-bar idea, moves it over the next chord, answers it with a contrasting phrase, and returns to it with a cadence. Later sections repeat it with ornaments, and a B section brings a second theme.
-- It also varies the arpeggio pattern, the lead sound, and whether a soft beat comes in.
+- a minor key (Aeolian, Dorian or Phrygian) and a tempo of 98–118 BPM
+- a slow chord loop with open, cold voicings, sometimes over a sustained bass note
+- a 16th-note synth sequence
+- a short, sparse electric-piano motif that repeats with small variations
+- an arrangement that builds from an intro, grows into the main groove, drops to a breakdown, returns and fades out
 
-`src/audio/music.js` plays the tunes:
-- a gliding lead with vibrato, over warm pads, glassy arpeggios, bells, sub-bass and air
-- a ping-pong delay and a long reverb on top
+`src/audio/music.js` plays each tune with:
+- stereo pads
+- the sequence through a sweeping resonant filter
+- a pulsing sub-bass
+- a soft deep kick with side-chain pumping
+- crisp hats, sparse claps, digital ticks and noise risers
+- a mellow FM electric piano soaked in ping-pong delay and reverb
 
 A new tune starts when one ends, after about two minutes.
 
