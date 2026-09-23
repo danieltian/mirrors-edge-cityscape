@@ -4,7 +4,7 @@ import { TONE_MODES } from '../render/post.js';
 // Settings panel (hidden until G / the gear button). Every change calls
 // applyLook() so the scene updates live.
 
-export function createGui({ look, applyLook, director, city, newCity, setAccents, stats }) {
+export function createGui({ look, applyLook, director, city, newCity, setAccents, stats, musicPrefs }) {
   const gui = new GUI({ title: 'Settings', width: 290 });
   gui.domElement.classList.add('settings');
   gui.hide();
@@ -16,6 +16,14 @@ export function createGui({ look, applyLook, director, city, newCity, setAccents
   cityF.add({ go: () => newCity() }, 'go').name('New city (N)');
   cityF.add(look, 'accents').name('Accents (C)').listen().onChange((v) => setAccents(v));
   cityF.add(stats, 'text').name('Stats').disable().listen();
+
+  const mus = gui.addFolder('Music');
+  mus.add(musicPrefs, 'on').name('Play (M)').listen().onChange((v) => musicPrefs.set(v));
+  mus.add(musicPrefs, 'tune').name('Now playing').disable().listen();
+  mus.add(musicPrefs, 'next').name('Next tune (Shift+M)');
+  mus.add(musicPrefs, 'volume', 0, 1, 0.01).name('Volume').onChange((v) => musicPrefs.setVolume(v));
+  mus.add(musicPrefs, 'url').name('Custom track URL').onFinishChange((v) => musicPrefs.setUrl(v));
+  mus.close();
 
   const cam = gui.addFolder('Camera');
   cam.add(director, 'driftSpeed', 0, 4, 0.05).name('Drift speed');

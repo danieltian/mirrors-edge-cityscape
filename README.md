@@ -18,6 +18,7 @@ Add `?seed=1234` to the URL to reproduce a specific city. The current seed is al
 | I | Toggle perspective / isometric |
 | T | Tour: cycle viewpoints automatically |
 | C | Colour accents on/off |
+| M | Music on/off (Shift+M: next tune) |
 | N | Generate a new city |
 | G | Settings panel |
 | H | Hide the control dock |
@@ -27,6 +28,39 @@ Add `?seed=1234` to the URL to reproduce a specific city. The current seed is al
 **Explore, isometric:** drag to pan, right-drag to rotate, scroll to zoom, WASD to move, Q/E to rotate 90°.
 
 Dragging, scrolling or pressing a movement key while drifting switches to Explore.
+
+## Music
+
+The soundtrack is generated, not recorded. Every tune is composed on the fly in the spirit of the game's menu music, then synthesised live with Web Audio, so there are no audio files and no copyrighted material.
+
+`src/audio/composer.js` writes each tune:
+- It picks a key and mode (Aeolian, Dorian, Ionian, Lydian or Mixolydian), a tempo, and two four-chord progressions.
+- It writes a melody built from motifs. Each eight-bar section states a two-bar idea, moves it over the next chord, answers it with a contrasting phrase, and returns to it with a cadence. Later sections repeat it with ornaments, and a B section brings a second theme.
+- It also varies the arpeggio pattern, the lead sound, and whether a soft beat comes in.
+
+`src/audio/music.js` plays the tunes:
+- a gliding lead with vibrato, over warm pads, glassy arpeggios, bells, sub-bass and air
+- a ping-pong delay and a long reverb on top
+
+A new tune starts when one ends, after about two minutes.
+
+Browsers don't allow audio before you interact with the page, so a small "Click anywhere for music" hint shows until your first click, tap or keypress. **M** toggles the music, **Shift+M** skips to a new tune, and the choice is remembered. Under Settings → Music you can see what's playing, change the volume, or set a **Custom track URL**: a direct link to an audio file you have the rights to, played in a loop instead. YouTube and SoundCloud page links won't work there, since those services only allow playback through their own visible players.
+
+## Deploying (GitHub Pages)
+
+The build uses relative paths (`base: './'`), so `dist/` works from any sub-path or static host.
+
+1. Create an empty repository on GitHub. Pages is free for public repositories.
+2. Push this repo to it:
+   ```bash
+   git remote add origin https://github.com/<you>/<repo>.git
+   git push -u origin main
+   ```
+3. In the repository, go to **Settings → Pages → Build and deployment** and set **Source** to **GitHub Actions**.
+
+The workflow in `.github/workflows/deploy.yml` builds and publishes every push to `main`. You can also start it by hand from the Actions tab. The site appears at `https://<you>.github.io/<repo>/`.
+
+To check the production build locally, run `npm run build && npm run preview`. For any other static host (Netlify, Cloudflare Pages, itch.io and so on), upload the contents of `dist/`.
 
 ## How it works
 

@@ -8,7 +8,7 @@ const HINTS = {
   iso: 'Drag to pan · Right-drag to rotate · Scroll to zoom · WASD to move · Q/E rotate 90°',
 };
 
-export function createDock({ director, getAccents, setAccents, toggleSettings, newCity }) {
+export function createDock({ director, getAccents, setAccents, toggleSettings, newCity, getMusic, toggleMusic, nextTune }) {
   const el = document.createElement('div');
   el.className = 'dock';
   el.innerHTML = `
@@ -24,6 +24,7 @@ export function createDock({ director, getAccents, setAccents, toggleSettings, n
     <span class="sep" aria-hidden="true"></span>
     <button data-act="tour" class="toggle" title="Cycle viewpoints automatically (T)">Tour</button>
     <button data-act="accents" class="toggle" title="Colour accents (C)">Accents</button>
+    <button data-act="music" class="toggle" title="Music (M) · next tune (Shift+M)">Music</button>
     <button data-act="settings" class="icon" title="Settings (G)" aria-label="Settings">${ICON_GEAR}</button>
   `;
   document.body.appendChild(el);
@@ -49,6 +50,7 @@ export function createDock({ director, getAccents, setAccents, toggleSettings, n
     if (act === 'random') director.randomLocation();
     if (act === 'tour') director.setTour(!director.tour.on);
     if (act === 'accents') setAccents(!getAccents());
+    if (act === 'music') toggleMusic();
     if (act === 'settings') toggleSettings();
     b.blur();
     sync();
@@ -92,6 +94,8 @@ export function createDock({ director, getAccents, setAccents, toggleSettings, n
     else if (k === 'i') director.toggleProjection();
     else if (k === 't') director.setTour(!director.tour.on);
     else if (k === 'c') setAccents(!getAccents());
+    else if (k === 'm' && e.shiftKey) nextTune();
+    else if (k === 'm') toggleMusic();
     else if (k === 'g') toggleSettings();
     else if (k === 'n') newCity();
     else if (k === 'h') {
@@ -117,6 +121,7 @@ export function createDock({ director, getAccents, setAccents, toggleSettings, n
     }
     el.querySelector('[data-act="tour"]').classList.toggle('on', director.tour.on);
     el.querySelector('[data-act="accents"]').classList.toggle('on', getAccents());
+    el.querySelector('[data-act="music"]').classList.toggle('on', getMusic());
     if (director.mode === 'explore' && !morphing && !hinted.has(director.projection)) {
       hinted.add(director.projection);
       showHint(HINTS[director.projection]);

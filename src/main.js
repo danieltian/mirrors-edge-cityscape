@@ -10,6 +10,7 @@ import { Post } from './render/post.js';
 import { Director } from './camera/director.js';
 import { createDock } from './ui/dock.js';
 import { createGui } from './ui/gui.js';
+import { Music } from './audio/music.js';
 
 const look = { ...LOOK };
 const app = document.getElementById('app');
@@ -40,6 +41,85 @@ const post = new Post(renderer, scene, director.camera, look);
 
 let city = null;
 const stats = { text: '' };
+
+// Music: preference persisted per browser. Browsers only allow audio after a
+// user gesture, so it starts on the first click / key press.
+const store = {
+  get(k, d) {
+    try {
+      return localStorage.getItem(`white-city:${k}`) ?? d;
+    } catch {
+      return d;
+    }
+  },
+  set(k, v) {
+    try {
+      localStorage.setItem(`white-city:${k}`, v);
+    } catch {
+      /* private mode etc. */
+    }
+  },
+};
+const music = new Music();
+const musicPrefs = {
+  on: store.get('music', 'on') === 'on',
+  volume: Number(store.get('volume', '0.7')),
+  url: store.get('music-url', ''),
+  set(on) {
+    this.on = on;
+    store.set('music', on ? 'on' : 'off');
+    if (on) music.start();
+    else music.stop();
+    dock?.sync();
+  },
+  setVolume(v) {
+    this.volume = v;
+    store.set('volume', String(v));
+    music.setVolume(v);
+  },
+  setUrl(v) {
+    this.url = (v || '').trim();
+    store.set('music-url', this.url);
+    music.setCustomUrl(this.url);
+  },
+};
+musicPrefs.tune = '(starts on first click)';
+musicPrefs.next = () => music.nextTune();
+music.volume = musicPrefs.volume;
+music.customUrl = musicPrefs.url;
+
+// A small, clickable hint while music is wanted but the browser is still
+// waiting for a user gesture.
+const soundHint = document.createElement('button');
+soundHint.className = 'sound-hint';
+soundHint.type = 'button';
+soundHint.innerHTML = '<span class="dot"></span>Click anywhere for music';
+document.body.appendChild(soundHint);
+let soundHintReady = false;
+setTimeout(() => {
+  soundHintReady = true;
+  updateSoundHint();
+}, 1800);
+function updateSoundHint() {
+  const show = soundHintReady && musicPrefs.on && !music.running && !musicPrefs.url;
+  soundHint.classList.toggle('show', show);
+}
+music.onChange = () => {
+  dock?.sync();
+  updateSoundHint();
+};
+music.onSong = (song) => (musicPrefs.tune = song.name);
+
+// Browsers only allow audio after a real user gesture (clicks, taps, most
+// keys; not modifier keys). Keep trying on every gesture until it runs.
+const IGNORED_KEYS = ['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Escape', 'Tab', 'Fn'];
+function onGesture(e) {
+  if (!musicPrefs.on || music.running) return;
+  if (e.type === 'keydown' && (IGNORED_KEYS.includes(e.key) || e.key.toLowerCase() === 'm')) return;
+  if (e.target?.closest?.('[data-act="music"]')) return; // that button toggles music itself
+  music.start();
+}
+for (const type of ['pointerdown', 'pointerup', 'keydown', 'touchend', 'click']) window.addEventListener(type, onGesture, true);
 
 function applyLook() {
   lighting.setSun(look.sunElevation, look.sunAzimuth);
@@ -152,11 +232,19 @@ setTimeout(() => {
     setAccents,
     toggleSettings: () => gui.toggle(),
     newCity: () => newCity(),
+    getMusic: () => music.playing && music.running,
+    toggleMusic: () => musicPrefs.set(!(music.playing && music.running)),
+    nextTune: () => {
+      if (!music.running) musicPrefs.set(true);
+      music.nextTune();
+    },
   });
-  gui = createGui({ look, applyLook, director, city: () => city, newCity, setAccents, stats });
+  gui = createGui({ look, applyLook, director, city: () => city, newCity, setAccents, stats, musicPrefs });
   dock.sync();
   resize();
   start();
+  // Starts right away only if the browser already allows audio here.
+  if (musicPrefs.on) music.start();
 }, 60);
 
 const timer = new THREE.Timer();
@@ -215,5 +303,5 @@ function start() {
 }
 
 // Handy for debugging from the console.
-window.__city = { director, get city() { return city; }, look, applyLook, renderer, post, lighting, step: renderFrame };
+window.__city = { director, get city() { return city; }, look, applyLook, renderer, post, lighting, music, step: renderFrame };
 if (import.meta.env.DEV) import('./debug.js').then((m) => m.installDebug(window.__city));
