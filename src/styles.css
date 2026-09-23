@@ -1,0 +1,248 @@
+:root {
+  --ink: #1d2a36;
+  --ink-soft: rgba(29, 42, 54, 0.62);
+  --panel: rgba(255, 255, 255, 0.72);
+  --panel-line: rgba(29, 42, 54, 0.08);
+  --accent: #e0322b;
+  --font: 'Helvetica Neue', Helvetica, system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #eef4f8;
+  color: var(--ink);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+#app,
+#app canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+/* White flash used for cuts between viewpoints. */
+.fade {
+  position: fixed;
+  inset: 0;
+  background: #f4f8fb;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.loading {
+  position: fixed;
+  inset: 0;
+  background: #f4f8fb;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  transition: opacity 1.4s ease 0.1s;
+}
+.loading.done {
+  opacity: 0;
+  pointer-events: none;
+}
+.loading .bar {
+  width: min(180px, 40vw);
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  background-size: 50% 100%;
+  background-repeat: no-repeat;
+  animation: sweep 1.1s ease-in-out infinite;
+}
+@keyframes sweep {
+  from { background-position: -100% 0; }
+  to { background-position: 200% 0; }
+}
+
+/* ------------------------------------------------------------------ dock */
+
+.dock {
+  position: fixed;
+  left: 50%;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: max-content;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  max-width: calc(100vw - 32px);
+  flex-wrap: wrap;
+  justify-content: center;
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  border-radius: 3px;
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  box-shadow: 0 8px 30px rgba(40, 90, 140, 0.12);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.dock.hidden {
+  opacity: 0;
+  transform: translate(-50%, 8px);
+  pointer-events: none;
+}
+
+.dock button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  font: 500 11px/1 var(--font);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 9px 12px;
+  border-radius: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.dock button:hover {
+  color: var(--ink);
+  background: rgba(29, 42, 54, 0.06);
+}
+.dock button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.dock button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.dock button.on {
+  color: #fff;
+  background: var(--accent);
+}
+.dock .seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 3px;
+  background: rgba(29, 42, 54, 0.05);
+}
+.dock .seg button {
+  padding: 7px 11px;
+}
+.dock .toggle.on {
+  color: var(--accent);
+  background: rgba(224, 50, 43, 0.1);
+}
+.dock .toggle.on::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 7px;
+  vertical-align: 1px;
+  background: var(--accent);
+}
+.dock .icon {
+  padding: 7px 9px;
+  display: grid;
+  place-items: center;
+}
+.dock .sep {
+  width: 1px;
+  height: 18px;
+  background: var(--panel-line);
+  margin: 0 2px;
+}
+
+.hint {
+  position: fixed;
+  left: 50%;
+  bottom: calc(max(20px, env(safe-area-inset-bottom)) + 62px);
+  transform: translate(-50%, 6px);
+  z-index: 10;
+  max-width: calc(100vw - 32px);
+  padding: 8px 14px;
+  font: 500 11px/1.4 var(--font);
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  text-align: center;
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  border-radius: 3px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.hint.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+@media (max-width: 640px) {
+  .dock {
+    gap: 4px;
+    padding: 4px;
+  }
+  .dock button {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    padding: 8px 8px;
+  }
+  .dock .seg button {
+    padding: 7px 8px;
+  }
+  .dock .sep {
+    display: none;
+  }
+  .hint {
+    bottom: calc(max(20px, env(safe-area-inset-bottom)) + 104px);
+  }
+}
+
+/* ------------------------------------------------------------------ lil-gui */
+
+.lil-gui.settings,
+.lil-gui.settings .lil-gui {
+  --background-color: rgba(250, 252, 254, 0.9);
+  --widget-color: rgba(29, 42, 54, 0.08);
+  --hover-color: rgba(29, 42, 54, 0.12);
+  --focus-color: rgba(29, 42, 54, 0.16);
+  --number-color: #1f6fb8;
+  --string-color: #1d2a36;
+  --text-color: #1d2a36;
+  --title-background-color: rgba(255, 255, 255, 0.95);
+  --title-text-color: #1d2a36;
+  --font-family: var(--font);
+  --font-size: 11px;
+}
+.lil-gui.settings {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  z-index: 12;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--panel-line);
+  border-radius: 3px;
+}
+@media (max-width: 640px) {
+  .lil-gui.settings {
+    left: 16px;
+    right: 16px;
+    width: auto !important;
+    max-height: 55vh;
+  }
+}
