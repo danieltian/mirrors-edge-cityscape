@@ -1,7 +1,12 @@
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import './styles.css';
-import { LOOK } from './config.js';
+import { LOOK, OFFICE_LOOK } from './config.js';
 import { generateCity } from './city/index.js';
+import { CityWorld } from './city/world.js';
+import { createOffice } from './office/index.js';
+import { OfficeWorld } from './office/world.js';
+import { FloorMirror } from './office/mirror.js';
 import { createMaterials } from './render/materials.js';
 import { Sky } from './render/sky.js';
 import { Water } from './render/water.js';
@@ -12,7 +17,13 @@ import { createDock } from './ui/dock.js';
 import { createGui } from './ui/gui.js';
 import { Music } from './audio/music.js';
 
-const look = { ...LOOK };
+// Two worlds share one renderer, camera director and post pipeline:
+//   city   - the white cityscape from the title screen
+//   office - procedurally generated Mirror's Edge style office interiors
+const looks = { city: { ...LOOK }, office: { ...OFFICE_LOOK } };
+const look = { ...looks.city }; // the active world's look (edited by the settings panel)
+let kind = 'city';
+
 const app = document.getElementById('app');
 const fadeEl = document.getElementById('fade');
 const loadingEl = document.getElementById('loading');
@@ -33,17 +44,32 @@ const sky = new Sky();
 scene.add(sky.mesh);
 const water = new Water(look);
 scene.add(water.mesh);
+const floorMirror = new FloorMirror();
 const lighting = new Lighting(scene);
 
 let dock = null;
+let gui = null;
 const director = new Director({ dom: renderer.domElement, overlay: fadeEl, onChange: () => dock?.sync() });
 const post = new Post(renderer, scene, director.camera, look);
 
 let city = null;
+let office = null;
+let world = null;
 const stats = { text: '' };
 
-// Music: preference persisted per browser. Browsers only allow audio after a
-// user gesture, so it starts on the first click / key press.
+// Soft studio reflections for glossy office floors, glass and steel.
+let envMap = null;
+function officeEnv() {
+  if (!envMap) {
+    const pm = new THREE.PMREMGenerator(renderer);
+    envMap = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+    pm.dispose();
+  }
+  return envMap;
+}
+
+// ------------------------------------------------------------------ music
+
 const store = {
   get(k, d) {
     try {
@@ -121,6 +147,8 @@ function onGesture(e) {
 }
 for (const type of ['pointerdown', 'pointerup', 'keydown', 'touchend', 'click']) window.addEventListener(type, onGesture, true);
 
+// ------------------------------------------------------------------ look
+
 function applyLook() {
   lighting.setSun(look.sunElevation, look.sunAzimuth);
   lighting.sun.color.set(look.sunColor);
@@ -176,38 +204,77 @@ function applyLook() {
 
 function setAccents(on) {
   look.accents = on;
+  looks.city.accents = looks.office.accents = on;
   city?.setAccents(on);
+  office?.setAccents(on);
   dock?.sync();
 }
 
-function seedFromUrl() {
-  const s = Number(new URLSearchParams(location.search).get('seed'));
-  return Number.isFinite(s) && s > 0 ? Math.floor(s) : null;
-}
+// ------------------------------------------------------------------ worlds
 
-function buildCity(seed) {
+const params = new URLSearchParams(location.search);
+const randomSeed = () => 1 + Math.floor(Math.random() * 999999);
+
+function buildWorld(k, seed) {
   if (city) {
     scene.remove(city.group);
     city.dispose();
+    city = null;
   }
-  city = generateCity(seed, materials);
-  scene.add(city.group);
-  city.setAccents(look.accents);
-  lighting.maxHeight = city.heightfield.maxHeight;
-  director.setCity(city, post, () => lighting.dir);
-  stats.text = `${city.stats.lots} lots · ${Math.round(city.stats.prims / 1000)}k parts · ${city.stats.ms} ms`;
+  if (office) {
+    scene.remove(office.group);
+    office.dispose();
+    office = null;
+  }
+  if (k !== kind) {
+    looks[kind] = { ...look };
+    Object.assign(look, looks[k]);
+    kind = k;
+  }
+  const getAspect = () => director.aspect;
+  if (k === 'city') {
+    city = generateCity(seed, materials);
+    scene.add(city.group);
+    city.setAccents(look.accents);
+    lighting.maxHeight = city.heightfield.maxHeight;
+    lighting.bounds = null;
+    scene.environment = null;
+    water.mesh.visible = true;
+    world = new CityWorld(city, { getAspect, getSunDir: () => lighting.dir });
+    stats.text = `${city.stats.lots} lots · ${Math.round(city.stats.prims / 1000)}k parts · ${city.stats.ms} ms`;
+  } else {
+    const t0 = performance.now();
+    office = createOffice(seed, { mirror: floorMirror });
+    scene.add(office.group);
+    office.setAccents(look.accents);
+    lighting.bounds = office.bounds;
+    look.sunAzimuth = office.sun.azimuth;
+    look.sunElevation = office.sun.elevation;
+    // Monochrome offices bathe the space in their colour, like the green lounge shots.
+    look.skyLight = office.mono ? '#' + new THREE.Color('#ffffff').lerp(new THREE.Color(office.palette.accent), 0.3).getHexString() : OFFICE_LOOK.skyLight;
+    look.groundLight = office.mono ? '#' + new THREE.Color(OFFICE_LOOK.groundLight).lerp(new THREE.Color(office.palette.accent), 0.2).getHexString() : OFFICE_LOOK.groundLight;
+    scene.environment = officeEnv();
+    water.mesh.visible = false;
+    world = new OfficeWorld(office, { getAspect });
+    stats.text = `${office.company.name} · ${office.palette.name}${office.mono ? ' (mono)' : ''} · ${office.rooms.length} spaces · ${Math.round(performance.now() - t0)} ms`;
+  }
+  applyLook();
+  director.setWorld(world, post);
   const url = new URL(location.href);
   url.searchParams.set('seed', seed);
+  if (k === 'office') url.searchParams.set('world', 'office');
+  else url.searchParams.delete('world');
   history.replaceState(null, '', url);
-  gui?.syncSeed();
-  console.info(`[city] seed ${seed}:`, city.stats);
+  gui?.refresh();
+  dock?.sync();
+  console.info(`[${k}] seed ${seed}:`, stats.text);
 }
 
-function newCity(seed) {
+function newWorld(k = kind, seed) {
   if (director.transition?.type === 'morph') return;
-  const s = seed ?? 1 + Math.floor(Math.random() * 999999);
-  director.fade(() => buildCity(s));
+  director.fade(() => buildWorld(k, seed ?? randomSeed()));
 }
+director.onNewWorld = () => newWorld(kind);
 
 function resize() {
   const w = window.innerWidth;
@@ -216,22 +283,25 @@ function resize() {
   const size = renderer.getDrawingBufferSize(new THREE.Vector2());
   post.setSize(w, h);
   water.setSize(size.x, size.y);
+  floorMirror.setSize(size.x, size.y);
   director.resize(w, h);
 }
 window.addEventListener('resize', resize);
 
 applyLook();
-let gui = null;
 
 // Build after the first paint so the white loading screen shows immediately.
 setTimeout(() => {
-  buildCity(seedFromUrl() ?? 1 + Math.floor(Math.random() * 999999));
+  const seed = Number(params.get('seed'));
+  buildWorld(params.get('world') === 'office' ? 'office' : 'city', Number.isFinite(seed) && seed > 0 ? Math.floor(seed) : randomSeed());
   dock = createDock({
     director,
+    getWorld: () => kind,
+    setWorld: (k) => k !== kind && newWorld(k),
     getAccents: () => look.accents,
     setAccents,
     toggleSettings: () => gui.toggle(),
-    newCity: () => newCity(),
+    newWorld: () => newWorld(kind),
     getMusic: () => music.playing && music.running,
     toggleMusic: () => musicPrefs.set(!(music.playing && music.running)),
     nextTune: () => {
@@ -239,13 +309,15 @@ setTimeout(() => {
       music.nextTune();
     },
   });
-  gui = createGui({ look, applyLook, director, city: () => city, newCity, setAccents, stats, musicPrefs });
+  gui = createGui({ look, applyLook, director, current: () => ({ kind, seed: city?.seed ?? office?.seed }), newWorld, setAccents, stats, musicPrefs });
   dock.sync();
   resize();
   start();
   // Starts right away only if the browser already allows audio here.
   if (musicPrefs.on) music.start();
 }, 60);
+
+// ------------------------------------------------------------------ frame loop
 
 const timer = new THREE.Timer();
 timer.connect(document);
@@ -283,13 +355,19 @@ function renderFrame(dt) {
   sky.update(cam);
   lighting.fitShadow(cam);
   renderer.shadowMap.needsUpdate = true;
-  water.uniforms.uTime.value += dt;
-  water.render(renderer, scene, cam, sky);
+  if (kind === 'city') {
+    water.uniforms.uTime.value += dt;
+    water.render(renderer, scene, cam, sky);
+  } else if (office) {
+    floorMirror.render(renderer, scene, cam, sky, world?.clipPlanes || []);
+  }
 
   post.update(cam, director.fogEye);
   const r = (director.aoRadius || 8) * look.aoRadiusScale;
-  if (Math.abs(post.ao.configuration.aoRadius - r) > 0.05) post.ao.configuration.aoRadius = r;
+  if (Math.abs(post.ao.configuration.aoRadius - r) > 0.02) post.ao.configuration.aoRadius = r;
+  renderer.clippingPlanes = world?.clipPlanes || [];
   post.render(dt);
+  renderer.clippingPlanes = [];
 
   if (first) {
     first = false;
@@ -303,5 +381,24 @@ function start() {
 }
 
 // Handy for debugging from the console.
-window.__city = { director, get city() { return city; }, look, applyLook, renderer, post, lighting, music, step: renderFrame };
+window.__city = {
+  director,
+  get city() {
+    return city;
+  },
+  get office() {
+    return office;
+  },
+  get world() {
+    return world;
+  },
+  look,
+  applyLook,
+  renderer,
+  post,
+  lighting,
+  music,
+  newWorld,
+  step: renderFrame,
+};
 if (import.meta.env.DEV) import('./debug.js').then((m) => m.installDebug(window.__city));

@@ -53,8 +53,8 @@ export class PanMotion {
 // Glide forward (e.g. down an avenue). Eases to a stop and turns into a pan
 // if something gets in the way.
 export class DollyMotion {
-  constructor({ pos, yaw, pitch, speed, fov = 60, hf, clearance = 8 }) {
-    Object.assign(this, { pos: pos.clone(), yaw, pitch, speed, fov, hf, clearance });
+  constructor({ pos, yaw, pitch, speed, fov = 60, hf, clearance = 8, stopDist = 200, probe = 260 }) {
+    Object.assign(this, { pos: pos.clone(), yaw, pitch, speed, fov, hf, clearance, stopDist, probe });
     this.v = speed;
     this.check = 0;
     this.stopping = false;
@@ -68,8 +68,8 @@ export class DollyMotion {
     this.check -= dt;
     if (!this.stopping && this.check <= 0) {
       this.check = 0.3;
-      const d = this.hf.raycast(this.pos.x, this.pos.y, this.pos.z, fx, 0, fz, 260);
-      if (d < 200) this.stopping = true;
+      const d = this.hf.raycast(this.pos.x, this.pos.y, this.pos.z, fx, 0, fz, this.probe);
+      if (d < this.stopDist) this.stopping = true;
     }
     if (this.stopping) {
       this.v = Math.max(0, this.v - this.speed * 0.25 * dt);
@@ -135,6 +135,35 @@ export class RiverMotion {
     if (!this.smoothTarget) this.smoothTarget = look.clone();
     else this.smoothTarget.lerp(look, smooth(1.2, dt));
     out.target.copy(this.smoothTarget);
+    out.fov = this.fov;
+  }
+}
+
+// Walk along a smoothed path (e.g. through office doorways), easing in and
+// out and looking a little way ahead.
+export class PathMotion {
+  constructor({ points, speed = 1.1, fov = 65, lookAhead = 2.4, clearance = 0 }) {
+    this.curve = new THREE.CatmullRomCurve3(points, false, 'centripetal', 0.5);
+    this.len = this.curve.getLength();
+    Object.assign(this, { speed, fov, lookAhead, clearance });
+    this.s = 0;
+    this.done = false;
+    this.look = null;
+    this._a = new THREE.Vector3();
+    this._t = new THREE.Vector3();
+  }
+  update(dt, out) {
+    const ease = Math.min(1, (this.s + 0.4) / 2.5, (this.len - this.s + 0.4) / 2.5);
+    this.s = Math.min(this.len, this.s + this.speed * Math.max(0.12, ease) * dt);
+    if (this.s >= this.len - 0.05) this.done = true;
+    this.curve.getPointAt(this.s / this.len, out.pos);
+    const ahead = this._a;
+    if (this.s + this.lookAhead <= this.len) this.curve.getPointAt((this.s + this.lookAhead) / this.len, ahead);
+    else ahead.copy(out.pos).addScaledVector(this.curve.getTangentAt(1, this._t), this.lookAhead);
+    ahead.y -= 0.15;
+    if (!this.look || dt === 0) this.look = ahead.clone();
+    else this.look.lerp(ahead, 1 - Math.exp(-dt * 2.2));
+    out.target.copy(this.look);
     out.fov = this.fov;
   }
 }

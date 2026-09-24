@@ -57,3 +57,38 @@ export const LOOK = {
 
   accents: true,
 };
+
+// Office interiors: overexposed, near-white light with the sun coming in
+// through the glazing; haze only beyond the building.
+export const OFFICE_LOOK = {
+  ...LOOK,
+  exposure: 0.8,
+  toneMapping: 'Neutral',
+  sunElevation: 32, // overridden per office so the sun comes through its windows
+  sunAzimuth: 0,
+  sunIntensity: 3.4,
+  sunColor: '#fff6ea',
+  skyLight: '#ffffff',
+  groundLight: '#e9e4dc',
+  hemiIntensity: 1.4,
+  zenith: '#c9e0f0',
+  horizon: '#f3f7fa',
+  skyIntensity: 2.7,
+  fogColor: '#eef3f6',
+  fogDensity: 0.004,
+  fogFalloff: 0.0002,
+  fogStart: 70,
+  farHaze: 0,
+  aoIntensity: 3.2,
+  aoColor: '#2c2a28',
+  bloomIntensity: 0.55,
+  bloomThreshold: 1.25,
+  bloomSmoothing: 0.3,
+  shadowTint: '#8c9aa8',
+  shadowTintAmount: 0.06,
+  saturation: 1.15,
+  contrast: 1.05,
+  vignette: 0.16,
+  highlightNeutral: 0.12,
+  baseDarken: 0,
+};

@@ -4,18 +4,18 @@ import { TONE_MODES } from '../render/post.js';
 // Settings panel (hidden until G / the gear button). Every change calls
 // applyLook() so the scene updates live.
 
-export function createGui({ look, applyLook, director, city, newCity, setAccents, stats, musicPrefs }) {
+export function createGui({ look, applyLook, director, current, newWorld, setAccents, stats, musicPrefs }) {
   const gui = new GUI({ title: 'Settings', width: 290 });
   gui.domElement.classList.add('settings');
   gui.hide();
   const on = () => applyLook();
 
-  const cityF = gui.addFolder('City');
-  const cityState = { seed: city().seed };
-  cityF.add(cityState, 'seed').name('Seed').listen().onFinishChange((v) => newCity(Math.max(1, Math.floor(Number(v)) || 1)));
-  cityF.add({ go: () => newCity() }, 'go').name('New city (N)');
+  const cityF = gui.addFolder('World');
+  const cityState = { seed: current().seed };
+  cityF.add(cityState, 'seed').name('Seed').listen().onFinishChange((v) => newWorld(current().kind, Math.max(1, Math.floor(Number(v)) || 1)));
+  cityF.add({ go: () => newWorld() }, 'go').name('Generate new (N)');
   cityF.add(look, 'accents').name('Accents (C)').listen().onChange((v) => setAccents(v));
-  cityF.add(stats, 'text').name('Stats').disable().listen();
+  cityF.add(stats, 'text').name('Info').disable().listen();
 
   const mus = gui.addFolder('Music');
   mus.add(musicPrefs, 'on').name('Play (M)').listen().onChange((v) => musicPrefs.set(v));
@@ -81,8 +81,10 @@ export function createGui({ look, applyLook, director, city, newCity, setAccents
       if (gui._hidden) gui.show();
       else gui.hide();
     },
-    syncSeed() {
-      cityState.seed = city().seed;
+    // The active look object changes when switching worlds.
+    refresh() {
+      cityState.seed = current().seed;
+      for (const c of gui.controllersRecursive()) c.updateDisplay();
     },
   };
 }

@@ -1,16 +1,15 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { WORLD } from '../config.js';
-import { ShotPlanner, ISO_EL } from './shots.js';
-import { OrbitMotion, PanMotion, IsoPanMotion, yawOf } from './motions.js';
+import { ISO_EL } from './shots.js';
+import { IsoPanMotion } from './motions.js';
 
 // Owns both cameras and decides where they are each frame:
 //   mode:       'drift' (automatic motion) | 'explore' (user controls)
 //   projection: 'persp' | 'iso'
 // plus transitions (white fade between shots, dolly-zoom morph between
-// perspective and isometric).
+// perspective and isometric). Everything world-specific (city or office)
+// goes through a world adapter: ray casts, collision, clip ranges, shots.
 
-const ISO_DIST = 9000;
 const ISO_POLAR = Math.PI / 2 - ISO_EL;
 const REF_TAN = Math.tan(THREE.MathUtils.degToRad(25)); // fog reference: 50° fov
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
@@ -23,12 +22,14 @@ export class Director {
     this.dom = dom;
     this.overlay = overlay;
     this.onChange = onChange || (() => {});
+    this.onNewWorld = null; // set by the app: asked for a fresh world when an office has been toured
     this.aspect = dom.clientWidth / Math.max(1, dom.clientHeight);
 
     this.persp = new THREE.PerspectiveCamera(50, this.aspect, 1, 30000);
-    this.ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 10, ISO_DIST * 2);
+    this.ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 10, 18000);
     this.camera = this.persp;
 
+    this.world = null;
     this.mode = 'drift';
     this.projection = 'persp';
     this.rig = { pos: new THREE.Vector3(), target: new THREE.Vector3(), fov: 50 };
@@ -37,6 +38,8 @@ export class Director {
     this.isoMotion = null;
     this.lift = 0;
     this.clearance = 10;
+    this.shotTime = 0;
+    this.shotDuration = 0;
     this.transition = null;
     this.fogEye = new THREE.Vector3();
     this.tour = { on: false, t: 0, interval: 30 };
@@ -67,16 +70,17 @@ export class Director {
     dom.addEventListener('wheel', () => (this.idle = 0), { passive: true });
   }
 
-  // Called whenever a (new) city is ready.
-  setCity(city, post, getSunDir) {
-    this.city = city;
-    this.hf = city.heightfield;
+  // Called whenever a (new) world is ready.
+  setWorld(world, post) {
+    this.world = world;
     this.post = post;
-    this.planner = new ShotPlanner(city, () => this.aspect, getSunDir);
+    this.planner = world.planner;
+    this.isoRotate = null;
     if (this.projection === 'iso') {
-      const s = this.planner.randomIso();
-      this.applyIsoShot(s);
+      world.setCutaway(true);
+      this.applyIsoShot(this.planner.randomIso());
     } else {
+      world.setCutaway(false);
       this.applyShot(this.planner.hero());
     }
     this.createControls();
@@ -90,13 +94,18 @@ export class Director {
     this.mode = mode;
     this.idle = 0;
     if (mode === 'drift') {
-      if (this.projection === 'persp') this.motion = this.motionFromCurrent();
-      else this.isoMotion = this.isoMotionFromCurrent();
+      if (this.projection === 'persp') {
+        const d = this.world.driftFrom(this.persp, this.controls ? this.controls.target.clone() : this.rig.target.clone());
+        this.motion = d.motion;
+        this.clearance = d.clearance;
+        this.shotDuration = d.duration || 0;
+        this.shotTime = 0;
+      } else this.isoMotion = this.isoMotionFromCurrent();
       this.lift = 0;
       this.prevPos = null;
     } else {
       // Hand the current view to the controls.
-      const target = this.projection === 'persp' ? this.rig.target : this.iso.target;
+      const target = this.projection === 'persp' ? this.world.exploreTarget(this.persp, this.rig.target) : this.iso.target;
       this.controls.target.copy(target);
       this.controls.update();
     }
@@ -107,8 +116,15 @@ export class Director {
     this.setMode(this.mode === 'drift' ? 'explore' : 'drift');
   }
 
-  randomLocation() {
+  // auto = triggered by drift/tour rather than the user.
+  randomLocation(auto = false) {
     if (!this.planner || this.transition?.type === 'morph') return;
+    this.tour.t = 0;
+    this.shotTime = 0;
+    if (auto && this.onNewWorld && this.world.wantsNewWorld()) {
+      this.onNewWorld();
+      return;
+    }
     if (this.projection === 'iso') {
       const s = this.planner.randomIso();
       this.fade(() => this.applyIsoShot(s));
@@ -116,12 +132,12 @@ export class Director {
       const shot = this.planner.random();
       this.fade(() => this.applyShot(shot));
     }
-    this.tour.t = 0;
   }
 
   toggleProjection() {
     if (this.transition) return;
     if (this.projection === 'persp') this.morphToIso();
+    else if (this.world.kind === 'office') this.cutToPersp();
     else this.morphToPersp();
   }
 
@@ -135,7 +151,7 @@ export class Director {
     this.aspect = w / Math.max(1, h);
     this.persp.aspect = this.aspect;
     this.persp.updateProjectionMatrix();
-    this.updateOrthoFrustum(this.iso.frame);
+    if (this.world) this.updateOrthoFrustum(this.iso.frame);
   }
 
   // ------------------------------------------------------------ shots
@@ -143,12 +159,14 @@ export class Director {
   applyShot(shot) {
     this.motion = shot.motion;
     this.clearance = shot.motion.clearance ?? 8;
+    this.shotDuration = shot.duration || 0;
+    this.shotTime = 0;
     this.lift = 0;
     this.prevPos = null;
     this.motion.update(0, this.rig);
     if (this.mode === 'explore') {
       this.placePersp(this.rig.pos, this.rig.target, this.rig.fov);
-      this.controls.target.copy(this.rig.target);
+      this.controls.target.copy(this.world.exploreTarget(this.persp, this.rig.target));
       this.controls.update();
     }
     this.shotKind = shot.kind;
@@ -167,37 +185,6 @@ export class Director {
     }
   }
 
-  motionFromCurrent() {
-    const cam = this.persp;
-    const pos = cam.position.clone();
-    const target = this.controls ? this.controls.target.clone() : this.rig.target.clone();
-    const dH = Math.hypot(pos.x - target.x, pos.z - target.z);
-    const dir = cam.getWorldDirection(new THREE.Vector3());
-    const ground = this.hf.maxAround(pos.x, pos.z, 20);
-    if (pos.y - ground > 120 && dH > 200 && target.y < 200) {
-      this.clearance = 10;
-      return new OrbitMotion({
-        center: target,
-        radius: dH,
-        height: pos.y,
-        angle: yawOf(pos.x - target.x, pos.z - target.z),
-        speed: clamp(11 / dH, 0.003, 0.03),
-        targetY: target.y,
-        fov: cam.fov,
-        arc: 0.8,
-      });
-    }
-    this.clearance = 1.5;
-    return new PanMotion({
-      pos,
-      yaw: yawOf(dir.x, dir.z),
-      pitch: Math.asin(clamp(dir.y, -1, 1)),
-      amp: 0.16,
-      period: 75,
-      fov: cam.fov,
-    });
-  }
-
   isoMotionFromCurrent() {
     if (this.ortho.zoom !== 1) {
       this.iso.frame /= this.ortho.zoom;
@@ -212,7 +199,7 @@ export class Director {
       frame: this.iso.frame,
       heading: Math.random() * Math.PI * 2,
       speed: this.iso.frame * 0.012,
-      radius: WORLD.half * 0.55,
+      radius: this.world.isoRadius,
     });
   }
 
@@ -231,6 +218,7 @@ export class Director {
   createControls() {
     this.controls?.dispose();
     const c = new OrbitControls(this.camera, this.dom);
+    const ex = this.world?.explore || {};
     c.enableDamping = true;
     c.dampingFactor = 0.08;
     c.zoomToCursor = true;
@@ -246,10 +234,11 @@ export class Director {
     } else {
       c.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
       c.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
-      c.minDistance = 3;
-      c.maxDistance = 9000;
-      c.maxPolarAngle = Math.PI * 0.6;
-      c.target.copy(this.rig.target);
+      c.minDistance = ex.minDistance ?? 3;
+      c.maxDistance = ex.maxDistance ?? 9000;
+      c.maxPolarAngle = ex.maxPolar ?? Math.PI * 0.6;
+      c.screenSpacePanning = !!ex.screenSpacePanning;
+      c.target.copy(this.world ? this.world.exploreTarget(this.persp, this.rig.target) : this.rig.target);
     }
     c.addEventListener('start', () => {
       this.idle = 0;
@@ -289,20 +278,21 @@ export class Director {
   }
 
   morphToIso() {
+    const W = this.world;
     const cam = this.persp;
     cam.updateMatrixWorld();
     const P0 = cam.position.clone();
     const f = cam.getWorldDirection(new THREE.Vector3());
-    let d = this.hf.raycast(P0.x, P0.y, P0.z, f.x, f.y, f.z, 6000);
-    if (!isFinite(d)) d = 1500;
-    d = Math.max(d, 60);
+    const [dMin, dDefault] = W.morphDist;
+    let d = W.raycast(P0.x, P0.y, P0.z, f.x, f.y, f.z, dDefault * 4);
+    if (!isFinite(d)) d = dDefault;
+    d = Math.max(d, dMin);
     const T0 = P0.clone().addScaledVector(f, d);
-    const lim = WORLD.half * 0.85;
-    const T1 = new THREE.Vector3(clamp(T0.x, -lim, lim), 0, clamp(T0.z, -lim, lim));
+    const T1 = W.clampTarget(T0.clone());
     const tan0 = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2);
     const tan1 = Math.tan(THREE.MathUtils.degToRad(0.35));
     const h0 = 2 * d * tan0;
-    const H1 = clamp(h0, 300, 2600);
+    const H1 = clamp(h0, W.isoFrameRange[0], W.isoFrameRange[1]);
     const off = P0.clone().sub(T0);
     const az0 = Math.atan2(off.x, off.z);
     const el0 = Math.asin(clamp(off.y / off.length(), -0.99, 0.99));
@@ -311,6 +301,7 @@ export class Director {
     let t = 0;
     const T = new THREE.Vector3();
     const dir = new THREE.Vector3();
+    W.setCutaway(true);
     this.transition = {
       type: 'morph',
       update: (dt) => {
@@ -324,8 +315,8 @@ export class Director {
         const dist = h / (2 * tanH);
         dirAzEl(az, el, dir);
         cam.fov = THREE.MathUtils.radToDeg(2 * Math.atan(tanH));
-        cam.near = Math.max(1, dist - 8000);
-        cam.far = dist + 12000;
+        cam.near = Math.max(W.minNear, dist - W.depthRange);
+        cam.far = dist + W.depthRange * 1.4;
         cam.position.copy(T).addScaledVector(dir, dist);
         cam.up.set(0, 1, 0);
         cam.lookAt(T);
@@ -333,7 +324,7 @@ export class Director {
         cam.updateMatrixWorld();
         const refTan = THREE.MathUtils.lerp(tan0, REF_TAN, u);
         this.fogEye.copy(T).addScaledVector(dir, h / (2 * refTan));
-        this.aoRadius = clamp(h * 0.012, 3, 25);
+        this.aoRadius = W.isoAo(h);
         if (t >= dur) {
           this.projection = 'iso';
           this.iso.target.copy(T1);
@@ -348,7 +339,6 @@ export class Director {
             this.controls.update();
           }
           this.persp.fov = 50;
-          this.onChange();
           return true;
         }
         return false;
@@ -358,6 +348,7 @@ export class Director {
   }
 
   morphToPersp() {
+    const W = this.world;
     const zoom = this.ortho.zoom;
     const target = this.mode === 'explore' ? this.controls.target.clone() : this.iso.target.clone();
     const off = this._v.subVectors(this.ortho.position, target);
@@ -369,9 +360,8 @@ export class Director {
     let H1 = H0;
     const end = new THREE.Vector3();
     for (let i = 0; i < 24; i++) {
-      const dist1 = H1 / (2 * tan1);
-      end.copy(target).addScaledVector(dirAzEl(az, el1), dist1);
-      if (end.y - this.hf.maxAround(end.x, end.z, 40) > 40) break;
+      end.copy(target).addScaledVector(dirAzEl(az, el1), H1 / (2 * tan1));
+      if (W.endClearanceOK(end)) break;
       H1 *= 1.15;
     }
     const cam = this.persp;
@@ -388,37 +378,54 @@ export class Director {
       const dist = h / (2 * tanH);
       dirAzEl(az, el, dir);
       cam.fov = THREE.MathUtils.radToDeg(2 * Math.atan(tanH));
-      cam.near = Math.max(1, dist - 8000);
-      cam.far = Math.max(30000, dist + 12000);
+      cam.near = Math.max(W.minNear, dist - W.depthRange);
+      cam.far = Math.max(30000, dist + W.depthRange * 1.4);
       cam.position.copy(target).addScaledVector(dir, dist);
       cam.up.set(0, 1, 0);
       cam.lookAt(target);
       cam.updateProjectionMatrix();
       cam.updateMatrixWorld();
       this.fogEye.copy(target).addScaledVector(dir, h / (2 * REF_TAN));
-      this.aoRadius = clamp(h * 0.012, 3, 25);
+      this.aoRadius = W.isoAo(h);
       if (t >= dur) {
         this.projection = 'persp';
+        W.setCutaway(false);
         this.rig.pos.copy(cam.position);
         this.rig.target.copy(target);
         this.rig.fov = cam.fov;
         if (this.mode === 'drift') {
-          const radius = Math.hypot(cam.position.x - target.x, cam.position.z - target.z);
-          this.motion = new OrbitMotion({ center: target, radius, height: cam.position.y, angle: az, speed: clamp(11 / radius, 0.003, 0.03), fov: cam.fov, arc: 0.8 });
-          this.clearance = 10;
+          const d = W.driftFrom(cam, target);
+          this.motion = d.motion;
+          this.clearance = d.clearance;
+          this.shotDuration = d.duration || 0;
+          this.shotTime = 0;
           this.lift = 0;
           this.prevPos = null;
         } else {
           this.controls.target.copy(target);
           this.controls.update();
         }
-        this.onChange();
         return true;
       }
       return false;
     };
     step(0);
     this.transition = { type: 'morph', update: step };
+    this.onChange();
+  }
+
+  // Indoors there is no sensible dolly back in, so cut to a fresh view.
+  cutToPersp() {
+    const shot = this.planner.random();
+    this.fade(() => {
+      this.projection = 'persp';
+      this.world.setCutaway(false);
+      this.setActiveCamera(this.persp);
+      this.applyShot(shot);
+      this.placePersp(this.rig.pos, this.rig.target, this.rig.fov);
+      this.onChange();
+    });
+    this.transition.type = 'morph';
     this.onChange();
   }
 
@@ -435,22 +442,19 @@ export class Director {
     cam.position.copy(pos);
     cam.up.set(0, 1, 0);
     cam.lookAt(target);
-    if (cam.fov !== fov) {
-      cam.fov = fov;
-    }
+    cam.fov = fov;
     this.updatePerspClip();
   }
 
   updatePerspClip() {
     const cam = this.persp;
-    const p = cam.position;
-    const clear = p.y - this.hf.maxAround(p.x, p.z, 30);
-    cam.near = clamp(clear * 0.2, 0.5, 30);
-    cam.far = 30000;
+    const c = this.world.clip(cam.position);
+    cam.near = c.near;
+    cam.far = c.far;
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
-    this.fogEye.copy(p);
-    this.aoRadius = clamp(Math.max(clear, 5) * 0.03 + 2.5, 2.5, 22);
+    this.fogEye.copy(cam.position);
+    this.aoRadius = c.ao;
   }
 
   updateOrthoFrustum(frame) {
@@ -459,8 +463,8 @@ export class Director {
     o.bottom = -frame / 2;
     o.left = (-frame * this.aspect) / 2;
     o.right = (frame * this.aspect) / 2;
-    o.near = 10;
-    o.far = ISO_DIST * 2;
+    o.near = this.world.orthoNear;
+    o.far = this.world.isoDist * 2;
     o.updateProjectionMatrix();
   }
 
@@ -468,7 +472,7 @@ export class Director {
     const o = this.ortho;
     this.updateOrthoFrustum(this.iso.frame);
     const dir = dirAzEl(this.iso.az, ISO_EL, this._w);
-    o.position.copy(this.iso.target).addScaledVector(dir, ISO_DIST);
+    o.position.copy(this.iso.target).addScaledVector(dir, this.world.isoDist);
     o.up.set(0, 1, 0);
     o.lookAt(this.iso.target);
     o.updateMatrixWorld();
@@ -479,13 +483,13 @@ export class Director {
     const frame = this.iso.frame / this.ortho.zoom;
     const dir = this._w.subVectors(this.ortho.position, target).normalize();
     this.fogEye.copy(target).addScaledVector(dir, frame / (2 * REF_TAN));
-    this.aoRadius = clamp(frame * 0.012, 3, 25);
+    this.aoRadius = this.world.isoAo(frame);
   }
 
   // ------------------------------------------------------------ per frame
 
   update(dt) {
-    if (!this.city) return;
+    if (!this.world) return;
     dt = Math.min(dt, 0.1);
     let morphing = false;
     if (this.transition) {
@@ -503,17 +507,21 @@ export class Director {
     if (this.mode === 'explore') {
       this.idle += dt;
       if (this.autoResume > 0 && this.idle > this.autoResume && !this.transition) this.setMode('drift');
+    } else if (!this.transition) {
+      this.shotTime += dt;
+      if (this.projection === 'persp' && this.shotDuration && this.shotTime > this.shotDuration) this.randomLocation(true);
     }
     if (this.tour.on && this.mode === 'drift' && !this.transition) {
       this.tour.t += dt;
-      if (this.tour.t > this.tour.interval) this.randomLocation();
+      if (this.tour.t > this.tour.interval) this.randomLocation(true);
     }
   }
 
   updatePersp(dt) {
+    const W = this.world;
     if (this.mode === 'drift') {
       this.motion.update(dt * this.driftSpeed, this.rig);
-      if (this.motion.done && !this.transition) this.randomLocation();
+      if (this.motion.done && !this.transition) this.randomLocation(true);
       this.applyLift(dt, this.rig.pos);
       this.placePersp(this.rig.pos, this.rig.target, this.rig.fov);
       return;
@@ -531,17 +539,16 @@ export class Director {
     if (k.has('e')) move.y += 1;
     if (k.has('q')) move.y -= 1;
     if (move.lengthSq() > 0) {
-      const alt = cam.position.y - this.hf.maxAround(cam.position.x, cam.position.z, 20);
-      const speed = clamp(Math.max(alt, 0) * 0.45, 15, 380) * (k.has('shift') ? 3 : 1);
+      const speed = W.flySpeed(cam.position) * (k.has('shift') ? 3 : 1);
       move.normalize().multiplyScalar(speed * dt);
       cam.position.add(move);
       this.controls.target.add(move);
     }
     this.controls.update();
-    // Never go through roofs or water.
-    const floor = Math.max(this.hf.maxAround(cam.position.x, cam.position.z, 3) + 2, WORLD.waterY + 2);
-    if (cam.position.y < floor) cam.position.y = floor;
-    if (this.controls.target.y < WORLD.waterY) this.controls.target.y = WORLD.waterY;
+    // Collision: move the orbit target along with any push-out.
+    const before = this._w.copy(cam.position);
+    W.constrain(cam.position, this.controls.target);
+    this.controls.target.add(before.subVectors(cam.position, before));
     this.rig.pos.copy(cam.position);
     this.rig.target.copy(this.controls.target);
     this.rig.fov = cam.fov;
@@ -550,15 +557,14 @@ export class Director {
 
   // Smoothly raise the camera over anything in its path.
   applyLift(dt, pos) {
-    const need = (p) => Math.max(this.hf.maxAround(p.x, p.z, 16) + this.clearance - p.y, WORLD.waterY + 3 - p.y, 0);
-    let now = need(pos);
+    const W = this.world;
+    const now = W.liftNeeded(pos, this.clearance);
     let ahead = now;
     if (this.prevPos && dt > 0) {
       const vel = this._w.subVectors(pos, this.prevPos).divideScalar(dt);
       vel.y = 0;
       if (vel.length() > 80) vel.setLength(80); // ignore jumps (cuts, mode switches)
-      const a = this._v.copy(pos).addScaledVector(vel, 2.5);
-      ahead = need(a);
+      ahead = W.liftNeeded(this._v.copy(pos).addScaledVector(vel, 2.5), this.clearance);
     }
     this.prevPos = (this.prevPos || new THREE.Vector3()).copy(pos);
     const goal = Math.max(now, ahead);
@@ -578,7 +584,7 @@ export class Director {
       this.iso.az = rotAz;
       if (this.mode === 'explore') {
         const target = this.controls.target;
-        o.position.copy(target).addScaledVector(dirAzEl(rotAz, ISO_EL, this._w), ISO_DIST);
+        o.position.copy(target).addScaledVector(dirAzEl(rotAz, ISO_EL, this._w), this.world.isoDist);
         o.lookAt(target);
       }
       if (r.t >= 1) this.isoRotate = null;
@@ -600,7 +606,7 @@ export class Director {
     if (k.has('d') || k.has('arrowright')) move.add(right);
     if (k.has('a') || k.has('arrowleft')) move.sub(right);
     if (move.lengthSq() > 0) {
-      const speed = ((this.iso.frame / o.zoom) * 0.6) * (k.has('shift') ? 3 : 1);
+      const speed = (this.iso.frame / o.zoom) * 0.6 * (k.has('shift') ? 3 : 1);
       move.normalize().multiplyScalar(speed * dt);
       o.position.add(move);
       this.controls.target.add(move);

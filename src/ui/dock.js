@@ -8,10 +8,14 @@ const HINTS = {
   iso: 'Drag to pan · Right-drag to rotate · Scroll to zoom · WASD to move · Q/E rotate 90°',
 };
 
-export function createDock({ director, getAccents, setAccents, toggleSettings, newCity, getMusic, toggleMusic, nextTune }) {
+export function createDock({ director, getWorld, setWorld, getAccents, setAccents, toggleSettings, newWorld, getMusic, toggleMusic, nextTune }) {
   const el = document.createElement('div');
   el.className = 'dock';
   el.innerHTML = `
+    <div class="seg" role="group" aria-label="World">
+      <button data-world="city" title="City (O)">City</button>
+      <button data-world="office" title="Office (O)">Office</button>
+    </div>
     <div class="seg" role="group" aria-label="Camera mode">
       <button data-mode="drift" title="Drift (Space)">Drift</button>
       <button data-mode="explore" title="Explore (Space)">Explore</button>
@@ -44,6 +48,7 @@ export function createDock({ director, getAccents, setAccents, toggleSettings, n
   el.addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
+    if (b.dataset.world) setWorld(b.dataset.world);
     if (b.dataset.mode) director.setMode(b.dataset.mode);
     if (b.dataset.proj && b.dataset.proj !== director.projection) director.toggleProjection();
     const act = b.dataset.act;
@@ -97,7 +102,8 @@ export function createDock({ director, getAccents, setAccents, toggleSettings, n
     else if (k === 'm' && e.shiftKey) nextTune();
     else if (k === 'm') toggleMusic();
     else if (k === 'g') toggleSettings();
-    else if (k === 'n') newCity();
+    else if (k === 'n') newWorld();
+    else if (k === 'o') setWorld(getWorld() === 'city' ? 'office' : 'city');
     else if (k === 'h') {
       hiddenByUser = !hiddenByUser;
       el.classList.toggle('hidden', hiddenByUser);
@@ -113,6 +119,7 @@ export function createDock({ director, getAccents, setAccents, toggleSettings, n
   });
 
   function sync() {
+    for (const b of el.querySelectorAll('[data-world]')) b.classList.toggle('on', b.dataset.world === getWorld());
     for (const b of el.querySelectorAll('[data-mode]')) b.classList.toggle('on', b.dataset.mode === director.mode);
     const morphing = director.transition?.type === 'morph';
     for (const b of el.querySelectorAll('[data-proj]')) {

@@ -69,6 +69,42 @@ export function installDebug(app) {
       this.step(3);
       return { kind: s.kind, pos: d.camera.position.toArray().map(Math.round), fov: Math.round(d.camera.fov) };
     },
+    // Render a frame and upload it as a JPEG to a local helper server
+    // (e.g. a tiny python http.server that writes POST bodies to disk).
+    async save(name = 'shot.jpg', width = 960, port = 5199) {
+      app.step(1 / 60);
+      const src = app.renderer.domElement;
+      const cv = document.createElement('canvas');
+      cv.width = width;
+      cv.height = Math.round((width * src.height) / src.width);
+      cv.getContext('2d').drawImage(src, 0, 0, cv.width, cv.height);
+      const blob = await new Promise((res) => cv.toBlob(res, 'image/jpeg', 0.85));
+      await fetch(`http://127.0.0.1:${port}/save?name=${encodeURIComponent(name)}`, { method: 'POST', body: blob });
+      return `${name} ${cv.width}x${cv.height}`;
+    },
+    // Corner view of a room of the given type (office only).
+    room(type, i = 0) {
+      const d = app.director;
+      const P = d.planner;
+      const rooms = app.office.rooms.filter((r) => r.type === type && r.level === 0);
+      const room = rooms[i % Math.max(1, rooms.length)];
+      if (!room) return null;
+      let best = null;
+      let bestScore = -Infinity;
+      for (let k = 0; k < 40; k++) {
+        const s = P.vista(room);
+        if (!s) continue;
+        const sc = P.score(P.evaluate(s.pos, s.target, s.fov), s.prefs);
+        if (sc > bestScore) {
+          bestScore = sc;
+          best = s;
+        }
+      }
+      if (!best) return null;
+      d.applyShot({ ...best, motion: best.motion() });
+      this.step(3);
+      return { type, n: rooms.length, pos: d.camera.position.toArray().map(Math.round) };
+    },
     clean() {
       document.getElementById('loading').style.display = 'none';
       document.querySelector('.dock').style.visibility = 'hidden';

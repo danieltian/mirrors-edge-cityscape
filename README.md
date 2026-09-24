@@ -1,25 +1,26 @@
 # White City
 
-A procedural, all-white cityscape in the spirit of the Mirror's Edge title screen: clean untextured towers, soft blue shade, white haze, and a calm river that mirrors the skyline. Built with Three.js.
+A procedural, all-white cityscape in the spirit of the Mirror's Edge title screen: clean untextured towers, soft blue shade, white haze, and a calm river that mirrors the skyline. It also has an **Office** world with generated Mirror's Edge style interiors. Built with Three.js.
 
 ```bash
 npm install
 npm run dev
 ```
 
-Add `?seed=1234` to the URL to reproduce a specific city. The current seed is always written back to the URL.
+Add `?seed=1234` to the URL to reproduce a specific city, or `?world=office&seed=1234` for an office. The current world and seed are always written back to the URL.
 
 ## Controls
 
 | Key | Action |
 | --- | --- |
+| O | Switch between the **City** and **Office** worlds |
 | Space | Toggle **Drift** (automatic camera) / **Explore** |
 | R | Jump to a random viewpoint |
 | I | Toggle perspective / isometric |
 | T | Tour: cycle viewpoints automatically |
 | C | Colour accents on/off |
 | M | Music on/off (Shift+M: next tune) |
-| N | Generate a new city |
+| N | Generate a new city / office |
 | G | Settings panel |
 | H | Hide the control dock |
 | F | Fullscreen |
@@ -28,6 +29,38 @@ Add `?seed=1234` to the URL to reproduce a specific city. The current seed is al
 **Explore, isometric:** drag to pan, right-drag to rotate, scroll to zoom, WASD to move, Q/E to rotate 90°.
 
 Dragging, scrolling or pressing a movement key while drifting switches to Explore.
+
+## Office world
+
+Every office is a whole storey of a tower, generated from a seed: typically 30–50 spaces on a 52–68 m by 34–38 m floor plate, sitting 25–80 m above the street among other towers.
+- **Plan:** perimeter rooms along both facades, a corridor inside each, and a middle zone with the lift and washroom core and back-to-back rooms. Cross corridors near the end facades close the loop.
+- **Atrium:** a double or triple height lobby cuts through one side. Its mezzanine (sometimes L-shaped) has an open steel stair and looks into glass-fronted rooms on the floor above.
+- **Spaces:** private offices, open-plan desk areas, meeting rooms, lounges, break rooms with kitchens, print rooms, store rooms, the lift lobby and the reception.
+- **Walls:** glass partitions with frosted bands and glass doors, solid walls with doors, colonnades and arcades onto the atrium, curtain walls with deep mullions (sometimes with sunshades) outside.
+- **Colour:** one bold accent colour (lime, yellow, orange, blue, magenta, red or teal) against white, grey tile and concrete. Monochrome offices are soaked in their colour.
+- **Furnishing:**
+  - seating: tub and box sofas, steel-framed armchairs, leather meeting chairs, beam seating
+  - tables and desks: wood boardroom tables, executive desks with twin screens and lamps, back-to-back desk rows with dividers
+  - display cases with city models, kitchens and café tables, shelving
+  - wall pieces: wall TVs, abstract paintings, painted monograms of the (fictional) firm, a pylon sign at reception
+  - overhead and planting: ring, disc and square pendants, serpentine ceiling soffits, bamboo and other planters
+- **Textures:** all drawn in code, with normal and roughness maps:
+  - porcelain and dark tile, quarter-turned carpet tiles
+  - mineral and perforated ceiling tiles, painted plaster and panelled walls
+  - board-marked concrete with tie holes, walnut veneer, leather, brushed steel
+  - the skyline's window facades
+- **Lighting:**
+  - sun through the glazing, and a planar reflection on the polished ground floor
+  - wall-washing downlights
+  - a low-resolution bounce map, a cheap stand-in for baked GI: rooms are brighter near their windows, and accent carpets and walls tint the light around them
+
+In Drift the camera tours the floor, always heading somewhere it hasn't shown yet:
+- walks between rooms along A* paths
+- corner views that frame a room's focal point
+- glimpses through glass partitions
+- corridor dollies, views from the mezzanine and cranes up the atrium
+
+After 8–11 shots it moves on to a freshly generated office. Explore uses collision against the walls and furniture. Isometric shows the whole floor as a cut-away dollhouse.
 
 ## Music
 
@@ -82,6 +115,19 @@ To check the production build locally, run `npm run build && npm run preview`. F
 - A matte white `MeshStandardMaterial`, a sun with a shadow map re-fitted to the view every frame, and a strong blue hemisphere light. The blue shade comes from that light.
 - Planar-reflection water that works with both perspective and orthographic cameras.
 - Post-processing: N8AO ambient occlusion with a blue tint, then analytic height fog and distance haze from the depth buffer, bloom, Neutral tone mapping, a grade that pulls shadows toward azure and highlights toward neutral white, a light vignette, and SMAA.
+
+**Office** (`src/office/`)
+- `plan.js`: the floor plan, made of axis-aligned rooms on each level that tile the plate exactly.
+- `generator.js`: walls from shared room edges, door and opening policy, glazing, floors, ceilings and the mezzanines. Everything is boxes, so collisions, rays and navigation use a simple list of colliders.
+- `decor.js`: furnishing and ceiling fixtures for each kind of space, plus focal points for the camera.
+- `furniture.js`, `textures.js`: the furniture and fixture library, and the canvas-drawn textures (albedo, normal and roughness).
+- `builder.js`: merges everything into meshes per material and floor chunk, with world-scale UVs.
+- `lightmap.js`: the bounce-light maps.
+- `mirror.js`: the planar floor reflection.
+- `nav.js`: walkable grids with connected areas, A* and path smoothing.
+- `shots.js`: the office viewpoint planner.
+- `index.js`: materials and shader hooks, a collider grid for fast ray casts and collision, and the cut-away.
+- `world.js`: the adapter the camera director uses (`src/city/world.js` is the city's equivalent).
 
 **Camera** (`src/camera/`)
 - `shots.js`: random viewpoints of several kinds: aerial, rooftop edge, river cruise, down an avenue, landmark orbit and harbour skyline. Each candidate is scored by marching 46 rays through the heightfield. It rejects walls in the face, low clearance and frames without city, and rewards depth, some water, landmarks and side lighting.

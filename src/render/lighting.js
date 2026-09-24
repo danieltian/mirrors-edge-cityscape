@@ -24,6 +24,7 @@ export class Lighting {
 
     this.dir = new THREE.Vector3(0, 1, 0);
     this.maxHeight = 500;
+    this.bounds = null; // { minX, maxX, minY, maxY, minZ, maxZ }; null = the city map
     this._rot = new THREE.Matrix4();
     this._rotInv = new THREE.Matrix4();
     this._corners = Array.from({ length: 8 }, () => new THREE.Vector3());
@@ -110,10 +111,11 @@ export class Lighting {
     }
     // Scene bounds in light space.
     const h = WORLD.half;
+    const B = this.bounds || { minX: -h, maxX: h, minY: WORLD.waterY - 5, maxY: this.maxHeight + 10, minZ: -h, maxZ: h };
     let sMinX = Infinity, sMaxX = -Infinity, sMinY = Infinity, sMaxY = -Infinity, sMinZ = Infinity, sMaxZ = -Infinity;
-    for (const x of [-h, h]) {
-      for (const y of [WORLD.waterY - 5, this.maxHeight + 10]) {
-        for (const z of [-h, h]) {
+    for (const x of [B.minX, B.maxX]) {
+      for (const y of [B.minY, B.maxY]) {
+        for (const z of [B.minZ, B.maxZ]) {
           v.set(x, y, z).applyMatrix4(inv);
           sMinX = Math.min(sMinX, v.x); sMaxX = Math.max(sMaxX, v.x);
           sMinY = Math.min(sMinY, v.y); sMaxY = Math.max(sMaxY, v.y);
@@ -128,7 +130,7 @@ export class Lighting {
     }
     // Square, quantised extent + texel-snapped centre.
     let size = Math.max(maxX - minX, maxY - minY) * 1.02;
-    const q = 64;
+    const q = this.bounds ? 4 : 64;
     size = Math.ceil(size / q) * q;
     const texel = size / MAP;
     const cx = Math.round((minX + maxX) / 2 / texel) * texel;
