@@ -30,13 +30,16 @@ class Ctx {
     const v = rng.range(0.86, 0.96);
     const cool = rng.range(-0.012, 0.018);
     this.tint = [v * (1 - cool), v, v * (1 + cool)];
+    // A painted building is coloured all over, like the red blocks of the
+    // title screen (see paintBuildings in index.js).
+    this.paint = lot.paint || null;
     this.top = 0;
   }
 
   prim(type, u, y, v, sx, sy, sz, opts = {}) {
     const wx = this.x + u * this.c + v * this.s;
     const wz = this.z - u * this.s + v * this.c;
-    this.sink.add(type, wx, y, wz, sx, sy, sz, this.a + (opts.rot || 0), opts.color || this.tint, opts.accent || null);
+    this.sink.add(type, wx, y, wz, sx, sy, sz, this.a + (opts.rot || 0), opts.color || this.tint, opts.accent || this.paint);
     if (y + sy > this.top) this.top = y + sy;
   }
 
@@ -45,15 +48,6 @@ class Ctx {
     this.prim(BOX, fp.u, y, fp.v, fp.w, h, fp.d, opts);
   }
 
-  accent(p) {
-    if (!this.rng.chance(p)) return null;
-    return ACCENTS[this.rng.weighted([
-      ['red', 45],
-      ['orange', 33],
-      ['yellow', 16],
-      ['teal', 6],
-    ])];
-  }
 }
 
 function shrink(rng, fp, fu, fv, align = 'rand') {
@@ -94,7 +88,7 @@ function roofProps(ctx, fp, y, cls, opts = {}) {
     const pd = clamp(fp.d * rng.range(0.22, 0.52), 3.5, 26);
     const ph = rng.range(3, 6.5);
     const p = place(pw, pd);
-    ctx.prim(BOX, p.u, y, p.v, pw, ph, pd, { accent: ctx.accent(0.02) });
+    ctx.prim(BOX, p.u, y, p.v, pw, ph, pd);
     if (rng.chance(0.35)) {
       const sw = pw * rng.range(0.35, 0.7);
       const sd = pd * rng.range(0.35, 0.7);
@@ -107,7 +101,7 @@ function roofProps(ctx, fp, y, cls, opts = {}) {
     const sw = rng.range(1.4, 3.6);
     const sd = sw * rng.range(0.6, 1.6);
     const p = place(sw, sd);
-    ctx.prim(BOX, p.u, y, p.v, sw, rng.range(1, 2.3), sd, { accent: ctx.accent(0.035) });
+    ctx.prim(BOX, p.u, y, p.v, sw, rng.range(1, 2.3), sd);
   }
 
   if (rng.chance(0.2)) {
@@ -124,7 +118,7 @@ function roofProps(ctx, fp, y, cls, opts = {}) {
     const p = place(r, r);
     const legs = rng.range(1.8, 3);
     ctx.prim(BOX, p.u, y, p.v, r * 0.7, legs, r * 0.7);
-    ctx.prim(CYL, p.u, y + legs, p.v, r, rng.range(4, 6), r, { accent: ctx.accent(0.05) });
+    ctx.prim(CYL, p.u, y + legs, p.v, r, rng.range(4, 6), r);
   }
 }
 
@@ -328,7 +322,7 @@ function industrial(ctx, fp, y0, H) {
   } else roofProps(ctx, fp, h, 'low', { parapet: 0.2 });
   if (rng.chance(0.18)) {
     const r = rng.range(2.5, 5);
-    ctx.prim(CYL, fp.u + rng.range(-0.35, 0.35) * fp.w, h, fp.v + rng.range(-0.35, 0.35) * fp.d, r, rng.range(18, 45), r, { accent: ctx.accent(0.25) });
+    ctx.prim(CYL, fp.u + rng.range(-0.35, 0.35) * fp.w, h, fp.v + rng.range(-0.35, 0.35) * fp.d, r, rng.range(18, 45), r);
   }
   if (rng.chance(0.25)) {
     // Silos / tanks beside the shed.
@@ -433,6 +427,9 @@ export function buildLot(sink, rng, lot) {
 
   const H = lot.forcedH || lotHeight(rng, lot);
   const cls = H < 24 ? 'low' : H < 88 ? 'mid' : 'tall';
+  // The painted blocks are low and mid-rise, as on the title screen; the
+  // big towers stay white.
+  if (H > 150) ctx.paint = null;
   const big = Math.min(fp.w, fp.d) >= 32;
 
   if (cls === 'low') {
@@ -475,14 +472,6 @@ export function buildLot(sink, rng, lot) {
     }
   }
 
-  // Rare accent panel running up one facade.
-  if (cls !== 'low' && rng.chance(0.02)) {
-    const side = rng.sign();
-    const pw = clamp(fp.w * rng.range(0.15, 0.3), 2.5, 8);
-    ctx.prim(BOX, fp.u + rng.range(-0.3, 0.3) * fp.w, y0, fp.v + side * (fp.d / 2 + 0.2), pw, H * rng.range(0.5, 0.95), 0.5, {
-      accent: ctx.accent(1),
-    });
-  }
   lot.top = ctx.top;
 }
 

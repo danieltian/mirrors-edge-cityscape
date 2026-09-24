@@ -9,6 +9,25 @@ import { buildLot, PLINTH_H, ACCENTS } from './buildings.js';
 import { planBridges, buildBridges } from './bridges.js';
 import { assignLandmarks, buildNeedle, buildHills } from './landmarks.js';
 
+// The accent colour covers whole buildings, like the red blocks on the title
+// screen: a handful of clusters of neighbouring buildings, mostly red, plus
+// the odd one on its own.
+function paintBuildings(rng, lots) {
+  const pool = lots.filter((l) => l.kind === 'building' && !l.forcedH);
+  const colour = () => ACCENTS[rng.weighted([['red', 76], ['orange', 14], ['yellow', 10]])];
+  const clusters = rng.int(10, 14);
+  for (let i = 0; i < clusters && pool.length; i++) {
+    const c = rng.pick(pool);
+    const col = colour();
+    const R = rng.range(50, 130);
+    for (const l of pool) {
+      const d = Math.hypot(l.x - c.x, l.z - c.z);
+      if (d < R && rng.chance(d < R * 0.45 ? 0.85 : 0.4)) l.paint = col;
+    }
+  }
+  for (const l of pool) if (!l.paint && rng.chance(0.01)) l.paint = colour();
+}
+
 // Builds the whole city for a seed. Returns the scene group plus the metadata
 // the camera system needs to find good viewpoints.
 export function generateCity(seed, materials) {
@@ -33,6 +52,8 @@ export function generateCity(seed, materials) {
     const l = candidates.splice(crng.int(0, candidates.length - 1), 1)[0];
     l.kind = 'construction';
   }
+
+  paintBuildings(rng.fork('paint'), lots);
 
   const sink = new PrimSink(hf);
   const plinthTint = [0.93, 0.94, 0.95];

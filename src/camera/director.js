@@ -248,6 +248,9 @@ export class Director {
     this.overlay.style.opacity = a.toFixed(3);
   }
 
+  // White cut: fade in, apply the change, fade out. If apply returns a
+  // promise, the screen stays white (and `holding` is set, so the app can
+  // skip drawing) until it settles.
   fade(apply) {
     const inDur = 0.32;
     const outDur = 0.85;
@@ -261,9 +264,17 @@ export class Director {
           this.setOverlay(ease(Math.min(1, t / inDur)));
           if (t >= inDur) {
             applied = true;
-            apply();
+            const wait = apply();
+            if (wait?.then) {
+              this.holding = true;
+              wait.finally(() => (this.holding = false));
+            }
             t = 0;
           }
+          return false;
+        }
+        if (this.holding) {
+          t = 0;
           return false;
         }
         this.setOverlay(1 - ease(Math.min(1, t / outDur)));

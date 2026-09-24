@@ -13,28 +13,28 @@ export const LOOK = {
   exposure: 0.8,
   toneMapping: 'Neutral',
 
-  sunElevation: 34, // degrees
+  sunElevation: 44, // degrees (high enough that roofs, not walls, catch the most sun)
   sunAzimuth: 212, // degrees, 0 = +z, clockwise from above
-  sunIntensity: 4.4,
-  sunColor: '#fffaf4',
+  sunIntensity: 7, // strong enough that sunlit faces read as clean white
+  sunColor: '#fffaf2',
 
-  skyLight: '#3d93dc', // hemisphere "sky" colour (drives the blue shadows)
-  groundLight: '#5f9ad0', // hemisphere "ground" colour (bounce)
-  hemiIntensity: 2.0,
+  skyLight: '#58a8ea', // hemisphere "sky" colour (drives the blue shadows)
+  groundLight: '#7ab4e2', // hemisphere "ground" colour (bounce)
+  hemiIntensity: 2.6,
 
-  zenith: '#a9d1ec',
+  zenith: '#7aa9d6',
   horizon: '#e4f0f5',
   skyIntensity: 2.4,
 
   fogColor: '#dcebf2',
-  fogDensity: 0.0001, // at ground level
+  fogDensity: 0.00006, // at ground level
   fogFalloff: 0.0008, // height falloff
   fogStart: 400, // metres of clear air before fog accumulates
   farHaze: 0.00012, // extra uniform haze beyond 3.5 km (distant hills)
 
-  aoIntensity: 3.0,
+  aoIntensity: 2.4,
   aoRadiusScale: 1,
-  aoColor: '#0f4c86',
+  aoColor: '#2a6cb0',
   aoQuality: 'Medium',
   aoHalfRes: true,
 
@@ -42,15 +42,15 @@ export const LOOK = {
   bloomThreshold: 1.15,
   bloomSmoothing: 0.25,
 
-  shadowTint: '#3597d6',
-  shadowTintAmount: 0.3,
-  saturation: 1.05,
+  shadowTint: '#3a98dc',
+  shadowTintAmount: 0.2,
+  saturation: 1.0,
   contrast: 1.0,
-  highlightNeutral: 0.6, // pull sunlit whites toward neutral white
+  highlightNeutral: 0.95, // pull sunlit whites toward neutral white
   vignette: 0.14,
 
-  baseDarken: 0.2, // extra darkening at building bases (fake GI)
-  baseHeight: 40,
+  baseDarken: 0.35, // extra darkening at building bases (fake GI)
+  baseHeight: 60,
 
   waterColor: '#c6dce4',
   waterReflect: 0.55,
@@ -116,4 +116,39 @@ export const MALL_LOOK = {
   contrast: 1.1,
   aoIntensity: 4.2,
   highlightNeutral: 0.1,
+};
+
+// Rooftops: hard white sun on white roofs, blue shade, a deep blue sky with
+// cumulus, and the city hazing out towards the harbour.
+export const ROOFTOP_LOOK = {
+  ...LOOK,
+  exposure: 0.8,
+  toneMapping: 'Neutral',
+  sunElevation: 48, // overridden per world
+  sunAzimuth: 200,
+  sunIntensity: 6.2,
+  sunColor: '#fff8ee',
+  skyLight: '#7cbaf2', // blue shade on white, as in the game
+  groundLight: '#d6e4ee',
+  hemiIntensity: 2.6,
+  zenith: '#1d6be0',
+  horizon: '#cfe2f2',
+  skyIntensity: 2.2,
+  fogColor: '#dde9f3',
+  fogDensity: 0.00015,
+  fogFalloff: 0.004,
+  fogStart: 320,
+  farHaze: 0.0001,
+  aoIntensity: 2.6,
+  aoColor: '#1c5a80',
+  bloomIntensity: 0.4,
+  bloomThreshold: 1.15,
+  bloomSmoothing: 0.3,
+  shadowTint: '#3a9fd6',
+  shadowTintAmount: 0.2,
+  saturation: 1.15,
+  contrast: 1.08,
+  highlightNeutral: 0.8,
+  vignette: 0.14,
+  baseDarken: 0,
 };

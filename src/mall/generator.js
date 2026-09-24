@@ -647,15 +647,40 @@ export function generateMall(seed) {
   else if (style.skylight === 'ridge') M.ridgeRoof(b, sky.x0, sky.x1, sky.z0, sky.z1, HA + 0.1, skyW * 0.28);
   else if (style.skylight === 'grid') M.beamGrid(b, sky.x0, sky.x1, sky.z0, sky.z1, HA + 0.1);
   else M.spaceFrame(b, sky.x0, sky.x1, sky.z0, sky.z1, HA + 0.1, 2.4, 1.6);
+  // Long banners hang from the skylight on cables and sway in the draught
+  // (built as separate animated meshes in index.js). They keep clear of the
+  // escalators, bridges and every gallery slab they pass.
   const bannerY = HA + 0.1;
-  const escTop = (levels - 1) * FH + 3;
-  for (let i = 0; i < style.banners; i++) {
-    const x = rng.range(tv.x0 + 3, tv.x1 - 3);
-    const z = rng.range(V.z0 + 2, V.z1 - 2);
-    const overChain = x > plan.chain.x0 - 1 && x < plan.chain.x1 + 1;
-    const maxLen = overChain ? bannerY - escTop - 0.5 : Math.min(9, bannerY - FH - 3);
-    if (maxLen < 3) continue;
-    M.hangingBanner(b, x, bannerY - 3, z, rng.range(1.4, 1.9), Math.min(maxLen - 3, rng.range(4, 7)), rng.chance(0.5) ? 0 : Math.PI / 2, `banner${i % 2}`);
+  const swayBanners = [];
+  const clearOf = (x, z, w, rot, yBottom) => {
+    const hx = rot === 0 ? w / 2 + 0.4 : 0.4;
+    const hz = rot === 0 ? 0.4 : w / 2 + 0.4;
+    if (x + hx > plan.chain.x0 - 1 && x - hx < plan.chain.x1 + 1 && yBottom < (levels - 1) * FH + 3.5) return false;
+    for (const br of bridges) if (x + hx > br.x0 - 0.8 && x - hx < br.x1 + 0.8 && yBottom < br.level * FH + 3.5) return false;
+    for (let L = 1; L < levels; L++) {
+      if (L * FH < yBottom - 0.5) continue;
+      const poly = voids[L].pts;
+      for (const [px, pz] of [[x - hx, z - hz], [x + hx, z - hz], [x - hx, z + hz], [x + hx, z + hz]]) if (!inPoly(poly, px, pz)) return false;
+    }
+    return true;
+  };
+  const nBanners = Math.max(4, style.banners + rng.int(1, 4));
+  for (let i = 0, tries = 0; i < nBanners && tries < 80; tries++) {
+    const x = rng.range(tv.x0 + 2.5, tv.x1 - 2.5);
+    const z = rng.range(V.z0 + 1.6, V.z1 - 1.6);
+    const w = rng.range(1.3, 2.2);
+    const rot = rng.chance(0.65) ? 0 : Math.PI / 2;
+    // Try long first, shortening until it clears everything below.
+    let len = Math.min(HA - 4.5, rng.range(9, 17));
+    while (len > 4 && !clearOf(x, z, w, rot, bannerY - 2 - len)) len -= 1.5;
+    if (len <= 4) continue;
+    if (swayBanners.some((s) => Math.hypot(s.x - x, s.z - z) < 3.5)) continue;
+    swayBanners.push({ x, y: bannerY - 2, z, w, len, rot, key: `banner${i % 2}` });
+    // Cables up to the skylight and a black top batten.
+    const f = b.frame(x, bannerY - 2, z, rot);
+    f.box('ceil:blackGloss', -w / 2 - 0.05, -0.02, -0.03, w / 2 + 0.05, 0.05, 0.03);
+    for (const s of [-1, 1]) f.geo('ceil:metal', new THREE.CylinderGeometry(0.006, 0.006, 2.1, 5), s * w * 0.4, 1.05, 0, 0);
+    i++;
   }
   {
     const far = plan.chain.x0 - tv.x0 > tv.x1 - plan.chain.x1 ? [tv.x0 + 4, plan.chain.x0 - 3] : [plan.chain.x1 + 3, tv.x1 - 4];
@@ -698,6 +723,7 @@ export function generateMall(seed) {
     vestibule: VB,
     focus,
     skyline,
+    swayBanners,
     exterior: ext,
     style,
     sun: { azimuth: rng.range(0, 360), elevation: rng.range(46, 68) },

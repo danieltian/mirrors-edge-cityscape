@@ -80,8 +80,9 @@ export function patch(mat, U, mirror) {
 
 // Skyline facades: window bays from an atlas, mapped from world position so
 // scaled instances keep a constant bay size.
-export function facadeMaterial(tex) {
-  const m = new THREE.MeshStandardMaterial({ color: '#f1f2f3', roughness: 0.85 });
+// seed: fixed window style for merged (non-instanced) buildings.
+export function facadeMaterial(tex, seed = null, color = '#f1f2f3') {
+  const m = new THREE.MeshStandardMaterial({ color, roughness: 0.85 });
   m.onBeforeCompile = (s) => {
     s.uniforms.uFacade = { value: tex };
     s.vertexShader = s.vertexShader
@@ -90,7 +91,7 @@ export function facadeMaterial(tex) {
         '#include <begin_vertex>',
         `#include <begin_vertex>
         vec4 fpos = vec4( position, 1.0 );
-        vFSeed = 0.37;
+        vFSeed = ${seed === null ? '0.37' : seed.toFixed(3)};
         #ifdef USE_INSTANCING
           fpos = instanceMatrix * fpos;
           vFSeed = fract( sin( dot( instanceMatrix[ 3 ].xz, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 );
@@ -120,7 +121,7 @@ export function facadeMaterial(tex) {
         }`,
       );
   };
-  m.customProgramCacheKey = () => 'office-facade';
+  m.customProgramCacheKey = () => `office-facade-${seed}`;
   return m;
 }
 

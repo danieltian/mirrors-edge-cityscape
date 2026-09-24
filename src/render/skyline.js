@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pickFacade, cityFacadeMaterial } from './facades.js';
 
 // The city seen from inside the office and the mall: a street grid of
 // blocks on raised pavements, filled with podium towers, stepped towers,
@@ -11,11 +12,17 @@ import * as THREE from 'three';
 // radius:   how far out the city goes
 // downtown: centre of the tallest cluster
 // tints:    facade colours to pick from
+// keep:     optional (x, z) => bool; blocks where it fails are left out (water)
+// cap:      optional (x, z) => max building height there
+// realistic: every building gets its own facade style and colours (see
+//           facades.js) instead of the shared window atlas, and some roofs
+//           let off steam (returned as plumes)
 
-export function planSkyline(rng, { site, groundY = 0, radius = 1100, downtown = { x: 0, z: 0 }, tints = ['#f3f3f1'], rise = 1, sitePad = false }) {
+export function planSkyline(rng, { site, groundY = 0, radius = 1100, downtown = { x: 0, z: 0 }, tints = ['#f3f3f1'], rise = 1, sitePad = false, keep = null, cap = null, realistic = false }) {
   const facades = []; // boxes with windows
   const plain = []; // pavements, parapets, rooftop plant, masts
   const trees = [];
+  const plumes = []; // steam off rooftop plant (realistic only)
   const G = groundY;
 
   // Street lines along one axis: the site's own block first, then blocks
@@ -38,19 +45,23 @@ export function planSkyline(rng, { site, groundY = 0, radius = 1100, downtown = 
   const Z = lines(site.z0 - m, site.z1 + m);
 
   const tint = () => rng.pick(tints);
-  const box = (list, x0, y0, z0, x1, y1, z1, color) => {
+  const box = (list, x0, y0, z0, x1, y1, z1, color, look = null) => {
     if (x1 - x0 < 0.2 || y1 - y0 < 0.05 || z1 - z0 < 0.2) return;
-    list.push({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, w: x1 - x0, d: z1 - z0, y0, h: y1 - y0, tint: color });
+    list.push({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, w: x1 - x0, d: z1 - z0, y0, h: y1 - y0, tint: look ? look.wall : color, look });
   };
+  // Facade colour and style for a building (or one part of it).
+  const clsOf = (h) => (h < 38 ? 'low' : h > 90 ? 'tall' : 'mid');
+  const facade = (h) => (realistic ? pickFacade(rng, clsOf(h)) : null);
 
   // Rooftop plant: boxes, a lift overrun, sometimes a mast.
-  const roof = (x0, z0, x1, z1, y, big) => {
+  const roof = (x0, z0, x1, z1, y, big, look = null) => {
     const w = x1 - x0;
     const d = z1 - z0;
-    box(plain, x0, y, z0, x1, y + 1.1, z0 + 0.35, '#f4f4f2');
-    box(plain, x0, y, z1 - 0.35, x1, y + 1.1, z1, '#f4f4f2');
-    box(plain, x0, y, z0, x0 + 0.35, y + 1.1, z1, '#f4f4f2');
-    box(plain, x1 - 0.35, y, z0, x1, y + 1.1, z1, '#f4f4f2');
+    const pc = look ? look.wall : '#f4f4f2';
+    box(plain, x0, y, z0, x1, y + 1.1, z0 + 0.35, pc);
+    box(plain, x0, y, z1 - 0.35, x1, y + 1.1, z1, pc);
+    box(plain, x0, y, z0, x0 + 0.35, y + 1.1, z1, pc);
+    box(plain, x1 - 0.35, y, z0, x1, y + 1.1, z1, pc);
     const n = big ? rng.int(1, 3) : rng.int(2, 6);
     for (let i = 0; i < n; i++) {
       const bw = big ? rng.range(0.25, 0.45) * w : rng.range(1.6, 4);
@@ -60,6 +71,7 @@ export function planSkyline(rng, { site, groundY = 0, radius = 1100, downtown = 
       const cx = rng.range(x0 + 1 + bw / 2, x1 - 1 - bw / 2);
       const cz = rng.range(z0 + 1 + bd / 2, z1 - 1 - bd / 2);
       box(plain, cx - bw / 2, y, cz - bd / 2, cx + bw / 2, y + bh, cz + bd / 2, rng.pick(['#f6f6f4', '#e8eaec', '#dfe2e5']));
+      if (realistic && rng.chance(big ? 0.07 : 0.01)) plumes.push({ x: cx, y: y + bh + 0.2, z: cz, r: Math.min(bw, bd) * 0.3, size: big ? rng.range(4, 7) : rng.range(2, 3.5) });
     }
     if (big && rng.chance(0.3)) {
       const cx = (x0 + x1) / 2 + rng.range(-0.2, 0.2) * w;
@@ -76,13 +88,14 @@ export function planSkyline(rng, { site, groundY = 0, radius = 1100, downtown = 
     const dc = Math.hypot((x0 + x1) / 2 - downtown.x, (z0 + z1) / 2 - downtown.z);
     const core = Math.exp(-dc / 420);
     const tall = rng.next() ** 1.6 * (40 + core * 210) * rise;
-    const h = rng.range(12, 34) + tall;
+    const h = Math.min(rng.range(12, 34) + tall, cap ? cap((x0 + x1) / 2, (z0 + z1) / 2) : Infinity);
     const c = tint();
+    const L = facade(h);
     const near = dist < 450;
     if (h < 38 || Math.min(w, d) < 14) {
       // Low-rise block filling the lot.
-      box(facades, x0, G, z0, x1, G + h, z1, c);
-      if (near) roof(x0, z0, x1, z1, G + h, false);
+      box(facades, x0, G, z0, x1, G + h, z1, c, L);
+      if (near) roof(x0, z0, x1, z1, G + h, false, L);
       return;
     }
     const type = rng.weighted([
@@ -95,12 +108,13 @@ export function planSkyline(rng, { site, groundY = 0, radius = 1100, downtown = 
     const cx = (x0 + x1) / 2;
     const cz = (z0 + z1) / 2;
     if (type === 'plain') {
-      box(facades, x0, G, z0, x1, G + h, z1, c);
-      if (near) roof(x0, z0, x1, z1, G + h, true);
+      box(facades, x0, G, z0, x1, G + h, z1, c, L);
+      if (near) roof(x0, z0, x1, z1, G + h, true, L);
     } else if (type === 'podium' || type === 'twin') {
       const ph = rng.range(8, 20);
-      box(facades, x0, G, z0, x1, G + ph, z1, rng.chance(0.5) ? c : tint());
-      if (near) roof(x0, z0, x1, z1, G + ph, false);
+      const PL = realistic && rng.chance(0.5) ? facade(ph) : L;
+      box(facades, x0, G, z0, x1, G + ph, z1, rng.chance(0.5) ? c : tint(), PL);
+      if (near) roof(x0, z0, x1, z1, G + ph, false, PL);
       const k = rng.range(0.5, 0.75);
       if (type === 'twin') {
         const alongX = w >= d;
@@ -110,16 +124,16 @@ export function planSkyline(rng, { site, groundY = 0, radius = 1100, downtown = 
           const tx = alongX ? cx + s * w * 0.24 : cx;
           const tz = alongX ? cz : cz + s * d * 0.24;
           const th = h * rng.range(0.85, 1.1);
-          box(facades, tx - tw / 2, G + ph, tz - td / 2, tx + tw / 2, G + th, tz + td / 2, c);
-          if (near) roof(tx - tw / 2, tz - td / 2, tx + tw / 2, tz + td / 2, G + th, true);
+          box(facades, tx - tw / 2, G + ph, tz - td / 2, tx + tw / 2, G + th, tz + td / 2, c, L);
+          if (near) roof(tx - tw / 2, tz - td / 2, tx + tw / 2, tz + td / 2, G + th, true, L);
         }
       } else {
         const tw = w * k;
         const td = d * rng.range(0.5, 0.75);
         const tx = cx + rng.range(-0.5, 0.5) * (w - tw);
         const tz = cz + rng.range(-0.5, 0.5) * (d - td);
-        box(facades, tx - tw / 2, G + ph, tz - td / 2, tx + tw / 2, G + h, tz + td / 2, c);
-        if (near) roof(tx - tw / 2, tz - td / 2, tx + tw / 2, tz + td / 2, G + h, true);
+        box(facades, tx - tw / 2, G + ph, tz - td / 2, tx + tw / 2, G + h, tz + td / 2, c, L);
+        if (near) roof(tx - tw / 2, tz - td / 2, tx + tw / 2, tz + td / 2, G + h, true, L);
       }
     } else if (type === 'stepped') {
       let [a0, b0, a1, b1] = [x0, z0, x1, z1];
@@ -127,8 +141,8 @@ export function planSkyline(rng, { site, groundY = 0, radius = 1100, downtown = 
       const tiers = rng.int(2, 4);
       for (let t = 0; t < tiers; t++) {
         const top = t === tiers - 1 ? G + h : y + (G + h - y) * rng.range(0.35, 0.6);
-        box(facades, a0, y, b0, a1, top, b1, c);
-        if (near && t === tiers - 1) roof(a0, b0, a1, b1, top, true);
+        box(facades, a0, y, b0, a1, top, b1, c, L);
+        if (near && t === tiers - 1) roof(a0, b0, a1, b1, top, true, L);
         y = top;
         const iw = (a1 - a0) * rng.range(0.07, 0.16);
         const id = (b1 - b0) * rng.range(0.07, 0.16);
@@ -145,9 +159,9 @@ export function planSkyline(rng, { site, groundY = 0, radius = 1100, downtown = 
       const sx1 = alongX ? x1 - 1.5 : cx + t / 2;
       const sz0 = alongX ? cz - t / 2 : z0 + 1.5;
       const sz1 = alongX ? cz + t / 2 : z1 - 1.5;
-      box(facades, sx0, G, sz0, sx1, G + h * 0.8, sz1, c);
-      if (near) roof(sx0, sz0, sx1, sz1, G + h * 0.8, true);
-      box(facades, x0, G, z0, x1, G + 6, z1, tint());
+      box(facades, sx0, G, sz0, sx1, G + h * 0.8, sz1, c, L);
+      if (near) roof(sx0, sz0, sx1, sz1, G + h * 0.8, true, L);
+      box(facades, x0, G, z0, x1, G + 6, z1, tint(), realistic ? facade(6) : null);
     }
   };
 
@@ -184,6 +198,7 @@ export function planSkyline(rng, { site, groundY = 0, radius = 1100, downtown = 
       }
       const cx = (x0 + x1) / 2;
       const cz = (z0 + z1) / 2;
+      if (keep && ![[x0, z0], [x1, z0], [x0, z1], [x1, z1]].every(([x, z]) => keep(x, z))) continue;
       const dist = Math.hypot(cx, cz);
       if (dist - Math.hypot(x1 - x0, z1 - z0) / 2 > radius) continue;
       // Pavement pad (streets are the ground between pads).
@@ -204,7 +219,7 @@ export function planSkyline(rng, { site, groundY = 0, radius = 1100, downtown = 
         // A paved square with one pavilion and a ring of trees.
         const pw = (x1 - x0) * 0.3;
         const pd = (z1 - z0) * 0.3;
-        box(facades, cx - pw / 2, G + 0.18, cz - pd / 2, cx + pw / 2, G + rng.range(5, 9), cz + pd / 2, tint());
+        box(facades, cx - pw / 2, G + 0.18, cz - pd / 2, cx + pw / 2, G + rng.range(5, 9), cz + pd / 2, tint(), facade(6));
         for (let k = 0; k < 14; k++) {
           const a = (k / 14) * Math.PI * 2;
           tree(cx + Math.cos(a) * (x1 - x0) * 0.38, cz + Math.sin(a) * (z1 - z0) * 0.38, rng.range(2, 3));
@@ -224,11 +239,12 @@ export function planSkyline(rng, { site, groundY = 0, radius = 1100, downtown = 
       }
     }
   }
-  return { facades, plain, trees, groundY: G, radius };
+  return { facades, plain, trees, plumes, realistic, groundY: G, radius };
 }
 
 // Instanced meshes for a planned skyline. Materials are shared with the
-// caller (facade) or owned here (plain, trees; disposed with the group).
+// caller (facade) or owned here (plain, trees, and the facades of a
+// realistic skyline; disposed with the group).
 export function buildSkyline(sky, facadeMat) {
   const group = new THREE.Group();
   group.name = 'skyline';
@@ -241,6 +257,19 @@ export function buildSkyline(sky, facadeMat) {
   const col = new THREE.Color();
   const v = new THREE.Vector3();
   const s = new THREE.Vector3();
+  const ownFacade = sky.realistic ? cityFacadeMaterial() : null;
+  const facadeGeo = sky.realistic ? unit.clone() : unit;
+  if (sky.realistic) {
+    const look = new Float32Array(sky.facades.length * 4);
+    const glass = new Float32Array(sky.facades.length * 3);
+    sky.facades.forEach((b, i) => {
+      const L = b.look || { kind: 1, storey: 3.4, pitch: 2.4, seed: 0.5, glass: '#3c4650' };
+      look.set([L.kind, L.storey, L.pitch, L.seed], i * 4);
+      col.set(L.glass).toArray(glass, i * 3);
+    });
+    facadeGeo.setAttribute('aLook', new THREE.InstancedBufferAttribute(look, 4));
+    facadeGeo.setAttribute('aGlass', new THREE.InstancedBufferAttribute(glass, 3));
+  }
   const inst = (geo, mat, list, place) => {
     if (!list.length) return null;
     const mesh = new THREE.InstancedMesh(geo, mat, list.length);
@@ -260,14 +289,17 @@ export function buildSkyline(sky, facadeMat) {
     v.set(b.x, b.y0, b.z);
     s.set(b.w, b.h, b.d);
   };
-  inst(unit, facadeMat, sky.facades, boxAt);
+  inst(facadeGeo, ownFacade || facadeMat, sky.facades, boxAt);
   inst(unit, plainMat, sky.plain, boxAt);
   inst(blob, treeMat, sky.trees, (t) => {
     v.set(t.x, t.y, t.z);
     s.set(t.r, t.r, t.r);
   });
+  group.userData.materials = [ownFacade || facadeMat, plainMat, treeMat];
   group.userData.dispose = () => {
     unit.dispose();
+    if (facadeGeo !== unit) facadeGeo.dispose();
+    ownFacade?.dispose();
     blob.dispose();
     plainMat.dispose();
     treeMat.dispose();

@@ -230,6 +230,67 @@ function bounceMaps(o) {
   return { textures, min: new THREE.Vector2(fp.x0, fp.z0), size: new THREE.Vector2(nx * res, nz * res), dispose: () => textures.forEach((t) => t.dispose()) };
 }
 
+// Banners that sway in the draught: the top stays put, the hem swings on a
+// few slow waves with a ripple travelling down the cloth and a slight twist.
+// One double-sided mesh each; the back face reads the texture mirrored back.
+const SWAY_VERTEX = /* glsl */ `
+  {
+    float sv = -position.y; // 0 at the batten, 1 at the hem
+    float ph = fract( sin( dot( modelMatrix[ 3 ].xz, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 ) * 6.2831;
+    float wv = sin( uTime * 0.55 + ph ) * 0.6 + sin( uTime * 1.31 + ph * 1.7 + sv * 1.8 ) * 0.3 + sin( uTime * 2.9 + sv * 7.0 + ph ) * 0.07;
+    transformed.z += uSwayAmp * pow( sv, 1.5 ) * wv;
+    transformed.z += transformed.x * 0.12 * sv * sin( uTime * 0.4 + ph * 2.3 );
+  }`;
+function swayify(mat, U, depth = false) {
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (shader, r) => {
+    prev?.call(mat, shader, r);
+    shader.uniforms.uTime = U.uTime;
+    shader.uniforms.uSwayAmp = U.uSwayAmp;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uSwayAmp;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>' + SWAY_VERTEX);
+    if (!depth) {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <map_fragment>',
+        `#ifdef USE_MAP
+          vec2 bannerUv = vMapUv;
+          if ( !gl_FrontFacing ) bannerUv.x = 1.0 - bannerUv.x;
+          diffuseColor *= texture2D( map, bannerUv );
+        #endif`,
+      );
+    }
+  };
+  mat.customProgramCacheKey = () => (depth ? 'banner-sway-depth' : 'banner-sway');
+  return mat;
+}
+
+function swayBanners(list, mats, U) {
+  const geo = new THREE.PlaneGeometry(1, 1, 2, 24).translate(0, -0.5, 0);
+  const own = {};
+  const depthMat = swayify(new THREE.MeshDepthMaterial({ side: THREE.DoubleSide }), U, true);
+  const meshes = list.map((s) => {
+    if (!own[s.key]) {
+      const m = mats[s.key].clone();
+      m.side = THREE.DoubleSide;
+      patch(m, U, false);
+      own[s.key] = swayify(m, U);
+    }
+    const mesh = new THREE.Mesh(geo, own[s.key]);
+    mesh.position.set(s.x, s.y, s.z);
+    mesh.rotation.y = s.rot;
+    mesh.scale.set(s.w, s.len, 1);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.customDepthMaterial = depthMat;
+    mesh.frustumCulled = false; // it swings outside its static bounds
+    mesh.userData.group = 'ceil';
+    mesh.name = 'swayBanner';
+    return mesh;
+  });
+  return { meshes, dispose: () => [geo, depthMat, ...Object.values(own)].forEach((x) => x.dispose()) };
+}
+
 export function createMall(seed, { mirror } = {}) {
   const t0 = performance.now();
   const o = generateMall(seed);
@@ -251,6 +312,8 @@ export function createMall(seed, { mirror } = {}) {
     uBounceSplit: { value: FH - 0.2 },
     uBounceTint: { value: 1 },
     uBounceColor: { value: accentN },
+    uTime: { value: 0 },
+    uSwayAmp: { value: 0.5 },
     ...(mirror?.uniforms ?? { uMirror: { value: null }, uMirrorMatrix: { value: new THREE.Matrix4() }, uMirrorAmt: { value: 0 }, uMirrorOn: { value: 0 } }),
   };
   for (const [k, mat] of Object.entries(mats.materials)) {
@@ -261,6 +324,8 @@ export function createMall(seed, { mirror } = {}) {
   // The city around the mall.
   const skyline = buildSkyline(o.skyline, mats.materials.facade);
   for (const c of [...skyline.children]) group.add(c);
+  const banners = swayBanners(o.swayBanners, mats.materials, U);
+  for (const m of banners.meshes) group.add(m);
 
   const cutGroups = group.children.filter((c) => c.userData.group === 'ceil' || c.userData.group === 'backdrop');
   const colliders = o.colliders;
@@ -336,6 +401,9 @@ export function createMall(seed, { mirror } = {}) {
       mats.setAccents(on);
       U.uBounceTint.value = on ? 1 : 0;
     },
+    update(dt) {
+      U.uTime.value += dt;
+    },
     setCutaway(on) {
       this.cutaway = on;
       for (const g of cutGroups) g.visible = !on;
@@ -344,6 +412,7 @@ export function createMall(seed, { mirror } = {}) {
     dispose() {
       group.traverse((c) => c.geometry?.dispose());
       skyline.userData.dispose();
+      banners.dispose();
       bounce.dispose();
       mats.dispose();
     },

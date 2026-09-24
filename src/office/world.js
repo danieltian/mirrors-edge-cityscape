@@ -2,11 +2,11 @@ import * as THREE from 'three';
 import { OfficePlanner } from './shots.js';
 import { PanMotion, yawOf } from '../camera/motions.js';
 
-// Adapts an office (or mall) to the camera director (same interface as CityWorld).
-
-// Also used for the mall, with its own planner and a few different limits.
+// Adapts an office to the camera director (same interface as CityWorld).
+// Also used for the mall and the rooftops, with their own planners and a
+// few different limits.
 export class OfficeWorld {
-  constructor(office, { getAspect, Planner = OfficePlanner, kind = 'office', isoFrameRange = [30, 150], maxDistance = 60 }) {
+  constructor(office, { getAspect, Planner = OfficePlanner, kind = 'office', isoFrameRange = [30, 150], maxDistance = 60, flySpeed = 3.2, targetY = 0 }) {
     this.kind = kind;
     this.office = office;
     this.planner = new Planner(office, getAspect);
@@ -19,6 +19,8 @@ export class OfficeWorld {
     this.isoRadius = Math.min(fp.x1 - fp.x0, fp.z1 - fp.z0) * 0.25;
     this.explore = { minDistance: 0.2, maxDistance, maxPolar: Math.PI * 0.97, screenSpacePanning: true };
     this.morphDist = [3, 20];
+    this.speed = flySpeed;
+    this.targetY = targetY;
   }
 
   isoAo(frame) {
@@ -46,12 +48,12 @@ export class OfficeWorld {
   }
 
   flySpeed() {
-    return 3.2;
+    return this.speed;
   }
 
   clampTarget(v) {
     const fp = this.office.footprint;
-    return v.set(Math.max(fp.x0, Math.min(fp.x1, v.x)), 0, Math.max(fp.z0, Math.min(fp.z1, v.z)));
+    return v.set(Math.max(fp.x0, Math.min(fp.x1, v.x)), this.targetY, Math.max(fp.z0, Math.min(fp.z1, v.z)));
   }
 
   endClearanceOK() {

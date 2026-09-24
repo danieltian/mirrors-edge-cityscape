@@ -8,7 +8,7 @@ const HINTS = {
   iso: 'Drag to pan · Right-drag to rotate · Scroll to zoom · WASD to move · Q/E rotate 90°',
 };
 
-const WORLDS = ['city', 'office', 'mall'];
+const WORLDS = ['city', 'office', 'mall', 'rooftop'];
 
 export function createDock({ director, getWorld, setWorld, getSeed, getAccents, setAccents, toggleSettings, newWorld, getMusic, toggleMusic, nextTune }) {
   const el = document.createElement('div');
@@ -20,6 +20,7 @@ export function createDock({ director, getWorld, setWorld, getSeed, getAccents, 
       <button data-world="city" title="City (1)" aria-keyshortcuts="1">City${key('1')}</button>
       <button data-world="office" title="Office (2)" aria-keyshortcuts="2">Office${key('2')}</button>
       <button data-world="mall" title="Mall (3)" aria-keyshortcuts="3">Mall${key('3')}</button>
+      <button data-world="rooftop" title="Rooftop (4)" aria-keyshortcuts="4">Rooftop${key('4')}</button>
     </div>
     <div class="seg" role="group" aria-label="Camera mode">
       <button data-mode="drift" title="Drift: an automatic tour, new view every few seconds (Space toggles)" aria-keyshortcuts="Space">Drift${key('Space')}</button>
@@ -108,7 +109,7 @@ export function createDock({ director, getWorld, setWorld, getSeed, getAccents, 
     else if (k === 'g') toggleSettings();
     else if (k === 'n') newWorld();
     else if (k === 'o') setWorld(WORLDS[(WORLDS.indexOf(getWorld()) + 1) % WORLDS.length]);
-    else if (['1', '2', '3'].includes(k)) setWorld(WORLDS[Number(k) - 1]);
+    else if (['1', '2', '3', '4'].includes(k)) setWorld(WORLDS[Number(k) - 1]);
     else if (k === 'h') {
       hiddenByUser = !hiddenByUser;
       el.classList.toggle('hidden', hiddenByUser);

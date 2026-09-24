@@ -5,13 +5,19 @@ import { composeSong } from './composer.js';
 // resonant filtered 16th-note sequence or plucked polyrhythmic arpeggio, a
 // pulsing, rolling or syncopated sub, a soft deep kick with side-chain
 // pumping, hats, snares, rims, claps and digital ticks, FM bells and a mellow
-// FM electric piano, sparkles, stutters, risers and reverse swells, all
-// drenched in ping-pong delay and a long reverb. A new tune follows each one.
+// FM electric piano, melodies on vibraphone, Rhodes, harp, celesta, marimba
+// or flute, sparkles, stutters, risers and reverse swells, all drenched in
+// ping-pong delay and a long reverb. A new tune follows each one.
 //
 // Optionally plays a user-supplied audio URL instead (looped).
 
 const midi = (m) => 440 * Math.pow(2, (m - 69) / 12);
 const rand = (a, b) => a + Math.random() * (b - a);
+
+// Struck-bar voices: [frequency ratio, level, decay (s)] per partial.
+const VIBES = { gain: 1.0, trem: 5.4, partials: [[1, 1, 2.8], [4, 0.2, 0.3], [10, 0.04, 0.05]] };
+const MARIMBA = { gain: 0.9, partials: [[1, 1, 0.8], [4, 0.3, 0.12], [9.9, 0.06, 0.03]] };
+const CELESTA = { gain: 1.3, partials: [[1, 1, 1.5], [2, 0.16, 0.4], [4, 0.07, 0.12]] };
 
 function makeImpulse(ctx, seconds, decay) {
   const len = Math.floor(ctx.sampleRate * seconds);
@@ -136,6 +142,7 @@ export class Music {
     this.fxBus = bus(0.4, 0.6);
     this.texBus = bus(0.3, 0.8);
     this.leadBus = bus(0.34, 0.85, 0.65);
+    this.ks = new Map(); // plucked-string (harp) note buffers
 
     // Side-chain style pumping on pads, sequence and bass.
     const duck = (to) => {
@@ -265,7 +272,7 @@ export class Music {
   }
 
   // Glassy FM bell: inharmonic modulator, long ring, lots of space.
-  bell(m, t, vel) {
+  bell(m, t, vel, gain = 1) {
     const ctx = this.ctx;
     const f = midi(m);
     for (const [det, pan] of [
@@ -278,12 +285,12 @@ export class Music {
       const mod = ctx.createOscillator();
       mod.frequency.value = f * 3.5;
       const idx = ctx.createGain();
-      idx.gain.setValueAtTime(f * 1.6 * vel, t);
-      idx.gain.exponentialRampToValueAtTime(f * 0.02, t + 2.2);
+      idx.gain.setValueAtTime(f * 0.9 * vel, t);
+      idx.gain.exponentialRampToValueAtTime(f * 0.02, t + 1.6);
       mod.connect(idx).connect(car.frequency);
       const amp = ctx.createGain();
       amp.gain.setValueAtTime(0.0001, t);
-      amp.gain.exponentialRampToValueAtTime(0.11 * vel, t + 0.004);
+      amp.gain.exponentialRampToValueAtTime(0.11 * vel * gain, t + 0.004);
       amp.gain.exponentialRampToValueAtTime(0.0001, t + 4.5);
       const p = ctx.createStereoPanner();
       p.pan.value = pan;
@@ -381,6 +388,267 @@ export class Music {
     o2.start(t);
     o.stop(t + dur + 1.3);
     o2.stop(t + dur + 1.3);
+  }
+
+  // Melody voices, all soft-edged: vibraphone (sine partials with a motor
+  // tremolo), Rhodes (gentle FM electric piano), harp (a plucked string),
+  // celesta (music-box bell), marimba (woody mallet) and flute (breathy,
+  // with vibrato and legato glides).
+  leadNote(m, t, dur, vel, kind) {
+    if (kind === 'rhodes') return this.rhodes(m, t, dur, vel);
+    if (kind === 'harp') return this.harp(m, t, vel);
+    if (kind === 'celesta') return this.mallet(m + 12, t, vel, CELESTA);
+    if (kind === 'marimba') return this.mallet(m, t, vel, MARIMBA);
+    if (kind === 'flute') return this.flute(m, t, dur, vel);
+    return this.mallet(m, t, vel, VIBES);
+  }
+
+  // Struck bars: a few sine partials, each with its own decay (higher
+  // notes ring shorter), optionally through a tremolo.
+  mallet(m, t, vel, spec) {
+    const ctx = this.ctx;
+    const f = midi(m);
+    const k = Math.min(1.6, Math.max(0.5, Math.pow(440 / f, 0.35)));
+    const end = t + Math.max(...spec.partials.map((p) => p[2])) * k + 0.05;
+    const out = ctx.createGain();
+    out.gain.value = spec.gain * vel;
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = rand(-0.25, 0.25);
+    out.connect(pan).connect(this.leadBus);
+    let dest = out;
+    if (spec.trem) {
+      dest = ctx.createGain();
+      dest.gain.value = 0.8;
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = spec.trem;
+      const depth = ctx.createGain();
+      depth.gain.value = 0.2;
+      lfo.connect(depth).connect(dest.gain);
+      dest.connect(out);
+      lfo.start(t);
+      lfo.stop(end);
+    }
+    for (const [ratio, amp, decay] of spec.partials) {
+      if (f * ratio > 15000) continue;
+      const o = ctx.createOscillator();
+      o.frequency.value = f * ratio;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(amp, t + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + decay * k);
+      o.connect(g).connect(dest);
+      o.start(t);
+      o.stop(t + decay * k + 0.05);
+    }
+  }
+
+  // Electric piano for melodies: soft FM "tine" that mellows as it rings,
+  // two voices a few cents apart, released with the note.
+  rhodes(m, t, dur, vel) {
+    const ctx = this.ctx;
+    const f = midi(m);
+    const hold = Math.max(0.25, dur);
+    const stop = t + Math.min(4.5, hold + 1.6);
+    for (const [det, pan] of [
+      [-3, -0.3],
+      [3, 0.3],
+    ]) {
+      const car = ctx.createOscillator();
+      car.frequency.value = f;
+      car.detune.value = det;
+      const mod = ctx.createOscillator();
+      mod.frequency.value = f;
+      mod.detune.value = det;
+      const idx = ctx.createGain();
+      idx.gain.setValueAtTime(f * 0.75 * vel, t);
+      idx.gain.exponentialRampToValueAtTime(f * 0.08, t + 1.1);
+      mod.connect(idx).connect(car.frequency);
+      const amp = ctx.createGain();
+      amp.gain.setValueAtTime(0.0001, t);
+      amp.gain.exponentialRampToValueAtTime(0.19 * vel, t + 0.005);
+      amp.gain.exponentialRampToValueAtTime(0.088 * vel, t + 1.1);
+      amp.gain.setTargetAtTime(0.0001, t + hold, 0.3);
+      const p = ctx.createStereoPanner();
+      p.pan.value = pan;
+      car.connect(amp).connect(p).connect(this.keysFilter);
+      car.start(t);
+      mod.start(t);
+      car.stop(stop);
+      mod.stop(stop);
+    }
+  }
+
+  // Plucked string (Karplus-Strong), rendered once per pitch and cached.
+  ksBuffer(m) {
+    let e = this.ks.get(m);
+    if (e) return e;
+    if (this.ks.size > 48) this.ks.clear();
+    const ctx = this.ctx;
+    const sr = ctx.sampleRate;
+    const f = midi(m);
+    const N = Math.max(2, Math.round(sr / f - 0.5));
+    const len = Math.floor(sr * 1.9);
+    const buf = ctx.createBuffer(1, len, sr);
+    const d = buf.getChannelData(0);
+    // A soft (low-passed) burst, then the averaging loop that rings down.
+    let lp = 0;
+    for (let i = 0; i < N; i++) {
+      lp += 0.45 * (Math.random() * 2 - 1 - lp);
+      d[i] = lp;
+    }
+    const T60 = 2 * Math.min(1.5, Math.max(0.6, Math.pow(440 / f, 0.4)));
+    const g = Math.pow(0.001, 1 / (f * T60));
+    for (let i = N; i < len; i++) d[i] = g * 0.5 * (d[i - N] + d[Math.max(0, i - N - 1)]);
+    let peak = 1e-6;
+    for (let i = 0; i < len; i++) peak = Math.max(peak, Math.abs(d[i]));
+    for (let i = 0; i < len; i++) d[i] *= 0.9 / peak;
+    e = { buf, rate: f / (sr / (N + 0.5)) };
+    this.ks.set(m, e);
+    return e;
+  }
+
+  harp(m, t, vel) {
+    const ctx = this.ctx;
+    const { buf, rate } = this.ksBuffer(m);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = rate;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = Math.min(7000, midi(m) * 7);
+    const g = ctx.createGain();
+    g.gain.value = 1.5 * vel;
+    const p = ctx.createStereoPanner();
+    p.pan.value = rand(-0.3, 0.3);
+    src.connect(lp).connect(g).connect(p).connect(this.leadBus);
+    src.start(t);
+  }
+
+  // Breathy flute: near-pure tone, a puff of breath noise on the attack,
+  // vibrato that comes in on held notes, and glides between close notes.
+  flute(m, t, dur, vel) {
+    const ctx = this.ctx;
+    const f = midi(m);
+    const prev = this.lastLead;
+    const glide = prev && t - prev.end < 0.08 && Math.abs(prev.m - m) <= 5;
+    this.lastLead = { m, end: t + dur };
+    const stop = t + dur + 0.6;
+    const out = ctx.createGain();
+    out.gain.setValueAtTime(0.0001, t);
+    out.gain.setTargetAtTime(0.32 * vel, t, glide ? 0.015 : 0.035);
+    out.gain.setTargetAtTime(0.26 * vel, t + 0.12, 0.2);
+    out.gain.setTargetAtTime(0.0001, t + dur, 0.09);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = Math.min(6000, f * 5);
+    lp.connect(out).connect(this.leadBus);
+    const vib = ctx.createOscillator();
+    vib.frequency.value = 5;
+    const vibAmt = ctx.createGain();
+    vibAmt.gain.setValueAtTime(0, t);
+    vibAmt.gain.setValueAtTime(0, t + Math.min(0.35, dur * 0.5));
+    vibAmt.gain.linearRampToValueAtTime(11, t + Math.min(0.9, dur));
+    vib.connect(vibAmt);
+    for (const [ratio, amp] of [[1, 1], [2, 0.14], [3, 0.045]]) {
+      const o = ctx.createOscillator();
+      if (glide) {
+        o.frequency.setValueAtTime(midi(prev.m) * ratio, t);
+        o.frequency.exponentialRampToValueAtTime(f * ratio, t + 0.06);
+      } else o.frequency.value = f * ratio;
+      vibAmt.connect(o.detune);
+      const a = ctx.createGain();
+      a.gain.value = amp;
+      o.connect(a).connect(lp);
+      o.start(t);
+      o.stop(stop);
+    }
+    // Breath: band-passed noise, strongest on the attack.
+    const n = ctx.createBufferSource();
+    n.buffer = this.noiseBuf;
+    n.loop = true;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = Math.min(8000, f * 2);
+    bp.Q.value = 0.9;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.0001, t);
+    ng.gain.exponentialRampToValueAtTime(glide ? 0.004 : 0.03 * vel, t + 0.03);
+    ng.gain.setTargetAtTime(0.007 * vel, t + 0.06, 0.1);
+    ng.gain.setTargetAtTime(0.0001, t + dur, 0.06);
+    n.connect(bp).connect(ng).connect(out);
+    n.start(t, Math.random() * 1.5);
+    n.stop(stop);
+    vib.start(t);
+    vib.stop(stop);
+  }
+
+  // Bass-line note (walking / syncopated lines): a round, slightly
+  // filtered saw over a sine.
+  lineBass(m, t, len, vel = 1) {
+    const ctx = this.ctx;
+    const f = midi(m);
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.value = f;
+    const s = ctx.createOscillator();
+    s.frequency.value = f;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.Q.value = 2;
+    lp.frequency.setValueAtTime(700, t);
+    lp.frequency.exponentialRampToValueAtTime(260, t + Math.max(0.08, len * 0.7));
+    const sg = ctx.createGain();
+    sg.gain.value = 1.2;
+    const og = ctx.createGain();
+    og.gain.value = 0.35;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.17 * vel, t + 0.006);
+    g.gain.setTargetAtTime(0.12 * vel, t + 0.03, 0.15);
+    g.gain.setTargetAtTime(0.0001, t + len * 0.92, 0.03);
+    o.connect(og).connect(lp);
+    s.connect(sg).connect(lp);
+    lp.connect(g).connect(this.bassDuck);
+    for (const x of [o, s]) {
+      x.start(t);
+      x.stop(t + len + 0.2);
+    }
+  }
+
+  // Tom for fills: a pitched thump.
+  tom(t, f, v) {
+    const ctx = this.ctx;
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(f, t);
+    o.frequency.exponentialRampToValueAtTime(f * 0.6, t + 0.25);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.2 * v, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+    o.connect(g).connect(this.clapBus);
+    o.start(t);
+    o.stop(t + 0.4);
+    this.noiseHit(t, this.drumBus, 'bandpass', f * 6, 1, 0.02 * v, 0.05);
+  }
+
+  // Soft cymbal swell / crash at the top of a section.
+  crash(t) {
+    const ctx = this.ctx;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.loop = true;
+    const f = ctx.createBiquadFilter();
+    f.type = 'highpass';
+    f.frequency.value = 5200;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.045, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 2.4);
+    const p = ctx.createStereoPanner();
+    p.pan.value = rand(-0.3, 0.3);
+    src.connect(f).connect(g).connect(p).connect(this.clapBus);
+    src.start(t, Math.random());
+    src.stop(t + 2.5);
   }
 
   // Rolling off-beat bass: a filtered saw with a quick envelope over a sub.
@@ -631,6 +899,7 @@ export class Music {
     this.secBar = 0;
     this.songBar = 0;
     this.stepInBar = 0;
+    this.lastLead = null;
     this.stepDur = 60 / song.bpm / 4;
     const dt = (60 / song.bpm) * song.delay;
     this.dl.delayTime.setTargetAtTime(dt, t, 0.5);
@@ -645,14 +914,20 @@ export class Music {
     const song = this.song;
     const sec = song.sections[this.sec];
     const s = this.stepInBar;
+    const bar = this.secBar;
     const barDur = 16 * this.stepDur;
-    const prog = sec.part === 'B' ? song.chordsB : song.chords;
-    const chord = prog[Math.floor(this.songBar / song.barsPerChord) % prog.length];
+    const sh = sec.shift || 0; // key change
+    const prog = song.progs[sec.part] || song.progs.A;
+    const bpc = song.bpc?.[sec.part] ?? song.barsPerChord;
+    const ci = Math.floor(bar / bpc) % prog.length;
+    const chord = prog[ci];
+    const nextChord = prog[(ci + 1) % prog.length];
+    const lastBarOfChord = bar % bpc === bpc - 1;
     // Swing pushes the off-beat sixteenths late.
     const ts = s % 2 === 1 ? t + song.swing * this.stepDur : t;
 
-    // Section start: sweep the sequence filter and set levels.
-    if (s === 0 && this.secBar === 0) {
+    // Section start: sweep the sequence filter, set levels, cymbal.
+    if (s === 0 && bar === 0) {
       const [from, to] = sec.arpCut;
       const f = this.seqFilter.frequency;
       f.cancelScheduledValues(t);
@@ -661,81 +936,114 @@ export class Music {
       this.seqLevel.gain.setTargetAtTime(sec.arp || 0.0001, t, 0.8);
       const padCut = { saw: 1, choir: 1.1, warm: 0.65, glass: 2.2 }[song.padKind] * (sec.drums ? 1300 : 800);
       this.padFilter.frequency.setTargetAtTime(padCut, t, 2);
+      if (sec.crash) this.crash(t);
     }
 
     // Chord change.
-    if (s === 0 && this.songBar % song.barsPerChord === 0) {
-      const dur = song.barsPerChord * barDur;
-      if (sec.pad) this.pad(chord.pad, t, dur, song.padKind);
-      if (sec.bass === 'drone') this.bassDrone(song.pedal ? song.tonicBass : chord.root, t, dur);
+    if (s === 0 && bar % bpc === 0) {
+      const dur = bpc * barDur;
+      if (sec.pad) this.pad(chord.pad.map((m) => m + sh), t, dur, song.padKind);
+      if (sec.bass === 'drone') this.bassDrone((song.pedal ? song.tonicBass : chord.root) + sh, t, dur);
       this.texFilter.frequency.setTargetAtTime(rand(600, 2600), t, dur * 0.3);
     }
 
     // Bass.
-    const bassNote = song.pedal && sec.bass === 'pulse' ? song.tonicBass : chord.root;
-    if (sec.bass === 'pulse' && s % 2 === 0 && s % 4 !== 0) this.bassPulse(bassNote, t, this.stepDur * 1.6);
-    else if (sec.bass === 'roll' && song.roll[s]) this.rollBass(chord.root + song.roll[s].iv, ts, this.stepDur * 0.85, song.roll[s].vel);
-    else if (sec.bass === 'sub' && song.sub[s]) this.subNote(chord.root, ts, song.sub[s] * this.stepDur);
+    const root = chord.root + sh;
+    const fifth = chord.seq[1] - chord.seq[0];
+    if (sec.bass === 'pulse' && s % 2 === 0 && s % 4 !== 0) this.bassPulse((song.pedal ? song.tonicBass : chord.root) + sh, t, this.stepDur * 1.6);
+    else if (sec.bass === 'roll' && song.roll[s]) this.rollBass(root + song.roll[s].iv, ts, this.stepDur * 0.85, song.roll[s].vel);
+    else if (sec.bass === 'sub' && song.sub[s]) this.subNote(root, ts, song.sub[s] * this.stepDur);
+    else if (sec.bass === 'line' || sec.bass === 'lazy') {
+      const line = sec.bass === 'lazy' ? [{ s: 0, len: 7, d: 'r' }, { s: 7, len: 3, d: '5' }, { s: 10, len: 4, d: 'r' }, { s: 14, len: 2, d: 'a' }] : song.bassLine;
+      for (const n of line) {
+        if (n.s !== s) continue;
+        let m = root;
+        if (n.d === '5') m = root + fifth;
+        else if (n.d === 'o') m = root + 12;
+        else if (n.d === 'a') m = lastBarOfChord && nextChord !== chord ? nextChord.root + sh + (nextChord.root > chord.root ? -1 : 1) : root + (s % 4 === 2 ? fifth : 0);
+        this.lineBass(m, ts, n.len * this.stepDur, s % 4 === 0 ? 1 : 0.8);
+      }
+    }
 
     // Sequence / arpeggio.
     if (sec.arp > 0) {
       if (song.arpKind === 'seq') {
         const p = song.seqPattern[s];
-        if (p) this.seqNote(chord.seq[p.idx], t, p.acc);
-      } else if (!song.arp.eighths || s % 2 === 0) {
-        const g = this.songBar * 16 + s;
-        const p = song.arp.pattern[(song.arp.eighths ? g / 2 : g) % song.arp.loop];
-        if (p) this.pluck(chord.seq[p.idx] + p.up, ts, p.acc, song.arp);
+        if (p) this.seqNote(chord.seq[p.idx] + sh, t, p.acc);
+      } else {
+        const arp = song.arps[sec.arpVar % song.arps.length];
+        if (!arp.eighths || s % 2 === 0) {
+          const g = this.songBar * 16 + s;
+          const p = arp.pattern[(arp.eighths ? g / 2 : g) % arp.loop];
+          if (p) this.pluck(chord.seq[p.idx] + p.up + sh, ts, p.acc, arp);
+        }
       }
     }
 
-    // Keys motif: repeats every two bars with small, random changes.
+    // Electric-piano motif: repeats every two bars with small changes.
     if (sec.keys) {
-      const cycle = Math.floor(this.secBar / 2);
-      const pos = (this.secBar % 2) * 16 + s;
-      const sparse = sec.name === 'build' && cycle % 2 === 1;
-      if (!sparse) {
+      const cycle = Math.floor(bar / 2);
+      const pos = (bar % 2) * 16 + s;
+      if (!(sec.name === 'build' && cycle % 2 === 1)) {
         song.motif.forEach((n, k) => {
           if (n.step !== pos || Math.random() < 0.1) return;
           let idx = n.idx;
           if (k === song.motif.length - 1 && cycle % 2 === 1) idx += Math.random() < 0.5 ? 1 : -1;
           idx = Math.max(0, Math.min(song.keysScale.length - 1, idx));
-          const up = sec.keysUp && cycle % 2 === 1 ? 12 : 0;
-          this.keys(song.keysScale[idx] + up, ts, n.vel * rand(0.85, 1));
+          this.keys(song.keysScale[idx] + sh, ts, n.vel * rand(0.85, 1));
         });
       }
     }
     // Electric-piano chord stabs.
-    if (sec.comp && song.compSteps.includes(s) && (s < 8 || this.secBar % 2 === 1)) {
-      for (const m of chord.pad) this.keys(m, ts + rand(0, 0.012), 0.34 * rand(0.8, 1));
+    if (sec.comp && song.compSteps?.includes(s) && (s < 8 || bar % 2 === 1)) {
+      for (const m of chord.pad) this.keys(m + sh, ts + rand(0, 0.012), 0.34 * rand(0.8, 1));
     }
-    // Slow bell melody.
+    // The melody.
     if (sec.lead) {
-      const pos = (this.secBar % song.lead.bars) * 16 + s;
-      for (const n of song.lead.notes) if (n.pos === pos) this.bell(song.keysScale[n.idx] + 12, t, n.vel);
+      // A long section plays the melody, then its lifted variation.
+      const key = sec.lead === 'A' && bar >= song.melodies.A.bars ? 'A2' : sec.lead;
+      const mel = song.melodies[key];
+      const pos = (bar % mel.bars) * 16 + s;
+      for (const n of mel.notes) if (n.pos === pos) this.leadNote(n.m + sh, ts, n.dur * this.stepDur, n.vel, sec.leadKind || song.leadKind);
+    }
+    // Counter-melody: a bell on each chord's guide tone (third or seventh).
+    if (sec.counter && s === 0 && bar % bpc === 0) {
+      const g = song.guides[sec.part] || song.guides.A;
+      this.bell(g[ci % g.length] + sh, t, 0.75);
     }
 
-    // Drums.
+    // Drums, with a fill at the end of every 8 bars.
     const kit = sec.drums ? song.drums[sec.drums] : null;
+    const filling = sec.fill && kit && bar % 8 === 7 && s >= 8;
     if (kit) {
-      if (kit.kick[s]) {
+      if (kit.kick[s] && !(filling && song.fillKind === 'toms' && s >= 12)) {
         this.kick(t, kit.kick[s]);
         this.pump(t, kit.kick[s]);
       }
-      if (sec.snare && kit.snare?.[s]) this.snare(ts, kit.snare[s]);
+      if (sec.snare && kit.snare?.[s] && !filling) this.snare(ts, kit.snare[s]);
       if (sec.hats > 0 && kit.open?.[s]) this.openHat(ts, kit.open[s] * sec.hats);
       if (kit.rim?.[s]) this.rim(ts, kit.rim[s]);
     }
-    if (sec.hats > 0 && song.hats[s] > 0) this.hat(ts, song.hats[s] * sec.hats);
+    if (filling) {
+      const k = song.fillKind;
+      if (k === 'snareRoll' && s >= 10) this.snare(ts, 0.35 + ((s - 10) / 6) * 0.6);
+      else if (k === 'toms' && s >= 12) this.tom(ts, [220, 180, 140, 110][s - 12], 0.9);
+      else if (k === 'stutter' && s >= 12) {
+        this.kick(t, 0.7);
+        if (s % 2) this.snare(ts, 0.6);
+      } else if (k === 'openHat' && (s === 10 || s === 14)) this.openHat(ts, 1);
+      if (s === 12 && k !== 'toms') this.snare(ts, 0.8);
+    }
+    if (sec.hats > 0 && song.hats[s] > 0 && !(filling && song.fillKind === 'snareRoll' && s >= 12)) this.hat(ts, song.hats[s] * sec.hats);
     if (sec.clap && (s === 4 || s === 12)) this.clap(t);
     if (sec.ticks && Math.random() < 0.05) this.tick(t + rand(0, this.stepDur));
     if (sec.shimmer && Math.random() < sec.shimmer) this.sparkle(t + rand(0, this.stepDur), song.keysScale);
 
     // Phrase ends: risers, reverse swells, glitchy stutters.
-    if (sec.riser && s === 0 && this.secBar === sec.bars - 2) this.riser(t, 2 * barDur);
-    if (sec.swell && s === 0 && this.secBar === sec.bars - 2) this.swell(t, 2 * barDur);
-    if (s === 0) this.glitchBar = sec.glitch > 0 && this.secBar % 4 === 3 && Math.random() < sec.glitch;
-    if (this.glitchBar && s === 12) this.stutter(t, chord.seq[Math.floor(Math.random() * 3)], 4 * this.stepDur);
+    if (sec.riser && s === 0 && bar === sec.bars - 2) this.riser(t, 2 * barDur);
+    if (sec.swell && s === 0 && bar === sec.bars - 2) this.swell(t, 2 * barDur);
+    if (s === 0) this.glitchBar = sec.glitch > 0 && bar % 4 === 3 && Math.random() < sec.glitch;
+    if (this.glitchBar && s === 12) this.stutter(t, chord.seq[Math.floor(Math.random() * 3)] + sh, 4 * this.stepDur);
 
     // Advance.
     this.stepInBar++;
@@ -756,13 +1064,20 @@ export class Music {
     }
   }
 
-  schedule() {
+  schedule(lookahead = 1.6) {
     // Generous look-ahead so background-tab timer throttling can't starve it.
-    const ahead = this.ctx.currentTime + 1.6;
+    const ahead = this.ctx.currentTime + lookahead;
     while (this.next < ahead) {
       this.step(this.next);
       this.next += this.stepDur;
     }
+  }
+
+  // Schedule several seconds ahead right before the page gets busy (building
+  // a world blocks the main thread). Web Audio plays what's scheduled on its
+  // own thread, so the music carries on through the freeze.
+  scheduleAhead(seconds = 8) {
+    if (this.timer && this.ctx && !this.customUrl) this.schedule(seconds);
   }
 
   // ------------------------------------------------------------ transport

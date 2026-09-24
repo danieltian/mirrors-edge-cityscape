@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import './styles.css';
-import { LOOK, OFFICE_LOOK, MALL_LOOK } from './config.js';
+import { LOOK, OFFICE_LOOK, MALL_LOOK, ROOFTOP_LOOK } from './config.js';
+import { RNG } from './util/rng.js';
 import { generateCity } from './city/index.js';
 import { CityWorld } from './city/world.js';
 import { createOffice } from './office/index.js';
@@ -9,6 +10,8 @@ import { OfficeWorld } from './office/world.js';
 import { FloorMirror } from './office/mirror.js';
 import { createMall } from './mall/index.js';
 import { MallPlanner } from './mall/shots.js';
+import { createRooftop } from './rooftop/index.js';
+import { RooftopPlanner } from './rooftop/shots.js';
 import { createMaterials } from './render/materials.js';
 import { Sky } from './render/sky.js';
 import { Water } from './render/water.js';
@@ -19,11 +22,13 @@ import { createDock } from './ui/dock.js';
 import { createGui } from './ui/gui.js';
 import { Music } from './audio/music.js';
 
-// Two worlds share one renderer, camera director and post pipeline:
-//   city   - the white cityscape from the title screen
-//   office - procedurally generated Mirror's Edge style office floors
-//   mall   - a New Eden style shopping mall and its plaza
-const looks = { city: { ...LOOK }, office: { ...OFFICE_LOOK }, mall: { ...MALL_LOOK } };
+// Four worlds share one renderer, camera director and post pipeline:
+//   city    - the white cityscape from the title screen
+//   office  - procedurally generated Mirror's Edge style office floors
+//   mall    - a New Eden style shopping mall and its plaza
+//   rooftop - a block of runner's rooftops above the city and the harbour
+const WORLDS = ['city', 'office', 'mall', 'rooftop'];
+const looks = { city: { ...LOOK }, office: { ...OFFICE_LOOK }, mall: { ...MALL_LOOK }, rooftop: { ...ROOFTOP_LOOK } };
 const look = { ...looks.city }; // the active world's look (edited by the settings panel)
 let kind = 'city';
 
@@ -58,6 +63,7 @@ const post = new Post(renderer, scene, director.camera, look);
 let city = null;
 let office = null;
 let mall = null;
+let roof = null;
 let world = null;
 const stats = { text: '' };
 
@@ -70,6 +76,27 @@ function officeEnv() {
     pm.dispose();
   }
   return envMap;
+}
+
+// Reflections of the (cloudy) sky itself, for glass towers and the harbour.
+// One generator, kept (a new one each time would compile its shaders again).
+let skyEnvMap = null;
+let skyPmrem = null;
+function skyEnv() {
+  skyEnvMap?.dispose();
+  const pm = (skyPmrem ??= new THREE.PMREMGenerator(renderer));
+  const s = new THREE.Scene();
+  const dome = new THREE.Mesh(sky.mesh.geometry, sky.mesh.material);
+  dome.scale.setScalar(100);
+  const groundGeo = new THREE.CircleGeometry(100, 32).rotateX(-Math.PI / 2);
+  const groundMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#a7b3bf').multiplyScalar(look.skyIntensity * 0.9) });
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.position.y = -3;
+  s.add(dome, ground);
+  skyEnvMap = pm.fromScene(s, 0, 0.1, 1000).texture;
+  groundGeo.dispose();
+  groundMat.dispose();
+  return skyEnvMap;
 }
 
 // ------------------------------------------------------------------ music
@@ -95,7 +122,7 @@ const musicPrefs = {
   on: store.get('music', 'on') === 'on',
   volume: Number(store.get('volume', '0.7')),
   url: store.get('music-url', ''),
-  style: store.get('music-style', 'any'),
+  style: ['any', 'menu', 'kruger', 'float', 'glass', 'skyline', 'nocturne'].includes(store.get('music-style', 'any')) ? store.get('music-style', 'any') : 'any',
   set(on) {
     this.on = on;
     store.set('music', on ? 'on' : 'off');
@@ -174,6 +201,7 @@ function applyLook() {
   su.uHorizon.value.set(look.horizon);
   su.uSunDir.value.copy(lighting.dir);
   su.uIntensity.value = look.skyIntensity;
+  roof?.setSunDir(lighting.dir);
 
   const fu = post.fog.uniforms;
   fu.get('uFogColor').value.set(look.fogColor).multiplyScalar(look.skyIntensity);
@@ -216,10 +244,11 @@ function applyLook() {
 
 function setAccents(on) {
   look.accents = on;
-  looks.city.accents = looks.office.accents = looks.mall.accents = on;
+  for (const k of WORLDS) looks[k].accents = on;
   city?.setAccents(on);
   office?.setAccents(on);
   mall?.setAccents(on);
+  roof?.setAccents(on);
   dock?.sync();
 }
 
@@ -229,6 +258,7 @@ const params = new URLSearchParams(location.search);
 const randomSeed = () => 1 + Math.floor(Math.random() * 999999);
 
 function buildWorld(k, seed) {
+  music.scheduleAhead(8); // building blocks the main thread for a moment
   if (city) {
     scene.remove(city.group);
     city.dispose();
@@ -244,12 +274,20 @@ function buildWorld(k, seed) {
     mall.dispose();
     mall = null;
   }
+  if (roof) {
+    scene.remove(roof.group);
+    roof.dispose();
+    roof = null;
+  }
   if (k !== kind) {
     looks[kind] = { ...look };
     Object.assign(look, looks[k]);
     kind = k;
   }
   const getAspect = () => director.aspect;
+  // Clouds (and the odd airliner) over the mall and the rooftops.
+  const wrng = new RNG((seed * 2654435761) >>> 0);
+  sky.setWeather(k === 'mall' || k === 'rooftop' ? { rng: wrng, cover: wrng.range(0.45, 0.64), scale: wrng.range(1.4, 2.2), wind: [wrng.range(-0.012, 0.012), wrng.range(0.004, 0.012)], planes: 0.75 } : null);
   if (k === 'city') {
     city = generateCity(seed, materials);
     scene.add(city.group);
@@ -275,6 +313,17 @@ function buildWorld(k, seed) {
     water.mesh.visible = false;
     world = new OfficeWorld(mall, { getAspect, Planner: MallPlanner, kind: 'mall', isoFrameRange: [40, 180], maxDistance: 120 });
     stats.text = `${mall.mall.name} · ${mall.palette.name} · ${mall.levels} levels · ${Math.round(performance.now() - t0)} ms`;
+  } else if (k === 'rooftop') {
+    const t0 = performance.now();
+    roof = createRooftop(seed);
+    scene.add(roof.group);
+    roof.setAccents(look.accents);
+    lighting.bounds = roof.bounds;
+    look.sunAzimuth = roof.sun.azimuth;
+    look.sunElevation = roof.sun.elevation;
+    water.mesh.visible = false;
+    world = new OfficeWorld(roof, { getAspect, Planner: RooftopPlanner, kind: 'rooftop', isoFrameRange: [60, 260], maxDistance: 400, flySpeed: 9, targetY: roof.plan.base });
+    stats.text = `${roof.plan.nx}×${roof.plan.nz} blocks · ${roof.roofs.length} roofs · ${roof.style.accents.join(', ')} · ${Math.round(performance.now() - t0)} ms`;
   } else {
     const t0 = performance.now();
     office = createOffice(seed, { mirror: floorMirror });
@@ -292,6 +341,13 @@ function buildWorld(k, seed) {
     stats.text = `${office.company.name} · ${office.palette.name}${office.mono ? ' (mono)' : ''} · ${office.rooms.length} spaces · ${Math.round(performance.now() - t0)} ms`;
   }
   applyLook();
+  sky.renderClouds(renderer); // the whole cloud map, before anything reflects it
+  if (k === 'rooftop') {
+    scene.environment = null;
+    roof.setEnvMap(skyEnv());
+    // Steam drifts the way the clouds go (the cloud offset moves against them).
+    roof.setWind(-sky.wind.x, -sky.wind.y);
+  }
   director.setWorld(world, post);
   const url = new URL(location.href);
   url.searchParams.set('seed', seed);
@@ -303,9 +359,16 @@ function buildWorld(k, seed) {
   console.info(`[${k}] seed ${seed}:`, stats.text);
 }
 
+// Shaders for the new world compile in the background (in parallel, where
+// the browser supports it) while the screen is still white, instead of
+// stalling the first frame.
 function newWorld(k = kind, seed) {
   if (director.transition?.type === 'morph') return;
-  director.fade(() => buildWorld(k, seed ?? randomSeed()));
+  director.fade(() => {
+    buildWorld(k, seed ?? randomSeed());
+    const timeout = new Promise((res) => setTimeout(res, 5000));
+    return Promise.race([renderer.compileAsync(scene, director.camera).catch(() => {}), timeout]);
+  });
 }
 director.onNewWorld = () => newWorld(kind);
 
@@ -319,19 +382,23 @@ function resize() {
   floorMirror.setSize(size.x, size.y);
   director.resize(w, h);
 }
-window.addEventListener('resize', resize);
+window.addEventListener('resize', () => {
+  resize();
+  // Redraw straight away so the cleared canvas never reaches the screen.
+  if (world) renderFrame(0);
+});
 
 applyLook();
 
 // Build after the first paint so the white loading screen shows immediately.
 setTimeout(() => {
   const seed = Number(params.get('seed'));
-  buildWorld(['office', 'mall'].includes(params.get('world')) ? params.get('world') : 'city', Number.isFinite(seed) && seed > 0 ? Math.floor(seed) : randomSeed());
+  buildWorld(WORLDS.includes(params.get('world')) ? params.get('world') : 'city', Number.isFinite(seed) && seed > 0 ? Math.floor(seed) : randomSeed());
   dock = createDock({
     director,
     getWorld: () => kind,
     setWorld: (k) => k !== kind && newWorld(k),
-    getSeed: () => city?.seed ?? office?.seed ?? mall?.seed,
+    getSeed: () => city?.seed ?? office?.seed ?? mall?.seed ?? roof?.seed,
     getAccents: () => look.accents,
     setAccents,
     toggleSettings: () => gui.toggle(),
@@ -343,7 +410,7 @@ setTimeout(() => {
       music.nextTune();
     },
   });
-  gui = createGui({ look, applyLook, director, current: () => ({ kind, seed: city?.seed ?? office?.seed ?? mall?.seed }), newWorld, setAccents, stats, musicPrefs });
+  gui = createGui({ look, applyLook, director, current: () => ({ kind, seed: city?.seed ?? office?.seed ?? mall?.seed ?? roof?.seed }), newWorld, setAccents, stats, musicPrefs });
   dock.sync();
   resize();
   start();
@@ -358,17 +425,18 @@ timer.connect(document);
 let first = true;
 
 // If the GPU can't keep up, step the pixel ratio down (never back up, to
-// avoid oscillating). Skips the first seconds and any transition hitches.
+// avoid oscillating). Skips the first seconds and any transition hitches,
+// and needs a few seconds of sustained slowness, not a brief dip.
 const adapt = { t: 0, ema: 1 / 60, min: 1 };
 function adaptResolution(dt) {
   adapt.t += dt;
   if (adapt.t < 4 || director.transition || dt > 0.25) return;
-  adapt.ema += (dt - adapt.ema) * 0.05;
+  adapt.ema += (dt - adapt.ema) * 0.02;
   const pr = renderer.getPixelRatio();
-  if (adapt.ema > 1 / 38 && pr > adapt.min) {
+  if (adapt.ema > 1 / 36 && pr > adapt.min) {
     renderer.setPixelRatio(Math.max(adapt.min, pr - 0.25));
     resize();
-    adapt.t = 2;
+    adapt.t = 0;
     adapt.ema = 1 / 60;
     console.info(`[perf] pixel ratio -> ${renderer.getPixelRatio()}`);
   }
@@ -377,16 +445,39 @@ function adaptResolution(dt) {
 function frame(time) {
   timer.update(time);
   const dt = timer.getDelta();
-  renderFrame(dt);
+  // Resizing clears the canvas, so it has to happen before this frame is
+  // drawn: done after, the browser shows the blank canvas (a white flash).
   adaptResolution(dt);
+  renderFrame(dt);
+}
+
+// Keep every compiled shader program. three.js deletes a program once the
+// last material using it is disposed, so each new world would compile all
+// its shaders again (a big part of the pause when switching). There's a
+// bounded set of variants, so hold on to them: a world built again, or
+// revisited, starts straight away.
+let pinned = 0;
+function pinPrograms() {
+  for (const p of renderer.info.programs) {
+    if (p.pinned || pinned >= 400) continue; // (a safety cap; a full session uses ~140)
+    p.usedTimes++;
+    p.pinned = true;
+    pinned++;
+  }
 }
 
 function renderFrame(dt) {
   director.update(dt);
+  // While a new world's shaders are compiling behind the white fade, don't
+  // draw (drawing would wait for them).
+  if (director.holding) return;
   const cam = director.camera;
   cam.updateMatrixWorld();
 
-  sky.update(cam);
+  sky.update(cam, dt);
+  sky.renderClouds(renderer, cam);
+  mall?.update(dt);
+  roof?.update(dt);
   lighting.fitShadow(cam);
   renderer.shadowMap.needsUpdate = true;
   if (kind === 'city') {
@@ -402,6 +493,7 @@ function renderFrame(dt) {
   renderer.clippingPlanes = world?.clipPlanes || [];
   post.render(dt);
   renderer.clippingPlanes = [];
+  pinPrograms();
 
   if (first) {
     first = false;
@@ -426,6 +518,10 @@ window.__city = {
   get mall() {
     return mall;
   },
+  get roof() {
+    return roof;
+  },
+  sky,
   get world() {
     return world;
   },
