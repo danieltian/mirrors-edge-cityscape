@@ -2,6 +2,7 @@ import { RNG } from '../util/rng.js';
 import { Builder } from './builder.js';
 import * as F from './furniture.js';
 import { makePlan, FH, CEIL } from './plan.js';
+import { planSkyline } from '../render/skyline.js';
 import { furnish, Placer, shuffle, EDGE_IN, edgeCoord } from './decor.js';
 
 // Procedural Mirror's Edge style office floor: a whole storey of a tower
@@ -14,6 +15,7 @@ import { furnish, Placer, shuffle, EDGE_IN, edgeCoord } from './decor.js';
 export { FH, CEIL };
 const T = 0.2; // wall thickness
 const DOOR_H = 2.35;
+const BULK = 0.1; // downstand over open / glazed partitions, so it never shares the ceiling plane
 
 export const PALETTES = [
   { name: 'lime', accent: '#86c830', accent2: '#c5ea6a', dark: '#4d8710', leaf: '#76c043', pop: ['#20b2c8', '#ff7a1a'] },
@@ -180,8 +182,8 @@ export function generateOffice(seed) {
       if (faces.neg) along(axis, c, ra, ya, rb, yb, -T / 2 - 0.015, -T / 2, faces.neg);
       if (faces.pos) along(axis, c, ra, ya, rb, yb, T / 2, T / 2 + 0.015, faces.pos);
       if (ya <= y0 + 1e-3) {
-        if (skirt.neg) along(axis, c, ra, ya, rb, ya + 0.07, -T / 2 - 0.028, -T / 2, 'skirting');
-        if (skirt.pos) along(axis, c, ra, ya, rb, ya + 0.07, T / 2, T / 2 + 0.028, 'skirting');
+        if (skirt.neg) along(axis, c, ra + 0.002, ya + 0.003, rb - 0.002, ya + 0.07, -T / 2 - 0.028, -T / 2, 'skirting');
+        if (skirt.pos) along(axis, c, ra + 0.002, ya + 0.003, rb - 0.002, ya + 0.07, T / 2, T / 2 + 0.028, 'skirting');
       }
     }
   }
@@ -200,7 +202,7 @@ export function generateOffice(seed) {
       const n = Math.max(1, Math.round((rb - ra) / 1.2));
       for (let i = 0; i <= n; i++) {
         const a = ra + ((rb - ra) * i) / n;
-        along(axis, c, a - 0.025, ya, a + 0.025, yb, -0.04, 0.04, glassFrame);
+        along(axis, c, a - 0.025, ya, a + 0.025, yb, -0.034, 0.034, glassFrame);
       }
       // Frosted manifestation bands.
       along(axis, c, ra, ya + 1.05, rb, ya + 1.3, -0.013, 0.013, 'frosted');
@@ -254,10 +256,14 @@ export function generateOffice(seed) {
     const doors = [];
     const has = (t) => r.type === t || q.type === t;
     const other = (t) => (r.type === t ? q : r);
+    // A spot for an opening of width w, clear of the ones already placed.
     const place = (w) => {
       if (len < w + 1.2) return null;
-      const s = Math.round(rng.range(seg.a0 + 0.6, seg.a1 - 0.6 - w) * 10) / 10;
-      return { a0: s, a1: s + w };
+      for (let k = 0; k < 12; k++) {
+        const s = Math.round(rng.range(seg.a0 + 0.6, seg.a1 - 0.6 - w) * 10) / 10;
+        if (ops.every((o) => s + w + 0.8 < o.a0 || s > o.a1 + 0.8)) return { a0: s, a1: s + w };
+      }
+      return null;
     };
     const addDoor = (w, opts) => {
       const p = place(w);
@@ -345,8 +351,19 @@ export function generateOffice(seed) {
 
           if (q && level === 0) {
             const o = openingsBetween(r, q, seg);
+            // Core faces carry either the lifts or a pair of washroom doors.
+            let wash = null;
+            if (o.core) {
+              const eCore = o.core === r ? e : OPP[e];
+              if (o.core.elevSide === undefined) o.core.elevSide = eCore;
+              o.lifts = o.core.elevSide === eCore && seg.a1 - seg.a0 > 3;
+              if (!o.lifts && seg.a1 - seg.a0 > 4) {
+                wash = [0.3, 0.7].map((t) => seg.a0 + (seg.a1 - seg.a0) * t);
+                for (const m of wash) o.ops.push({ a0: m - 0.45, a1: m + 0.45, top: DOOR_H, door: true });
+              }
+            }
             if (o.style === 'open') {
-              along(axis, c, seg.a0, CEIL, seg.a1, FH, -T / 2, T / 2, 'wall', true);
+              along(axis, c, seg.a0, CEIL - BULK, seg.a1, FH, -T / 2, T / 2, 'wall', true);
             } else if (o.style === 'colonnade') {
               const n = Math.max(2, Math.round((seg.a1 - seg.a0) / 4.5));
               const colKey = rng.chance(0.4) ? 'accent' : 'white';
@@ -359,39 +376,32 @@ export function generateOffice(seed) {
               o.ops.push({ a0: seg.a0, a1: seg.a1, top: 3.4 });
             } else if (o.style === 'glass') {
               glassWall(axis, c, seg.a0, seg.a1, 0, CEIL, o.ops);
-              along(axis, c, seg.a0, CEIL, seg.a1, FH, -T / 2, T / 2, 'wall', true);
+              along(axis, c, seg.a0, CEIL - BULK, seg.a1, FH, -T / 2, T / 2, 'wall', true);
             } else {
               solidWall(axis, c, seg.a0, seg.a1, 0, FH, o.ops, faces);
             }
             for (const d of o.doors) {
               const glass = o.style === 'glass' && d.glass;
               if (d.double) {
-                const mid = (d.a0 + d.a1) / 2;
-                F.door(b, axis, c, d.a0, mid, 0, DOOR_H, { open: true, into: intoSign(r, e, d.room), glass, frame: glassFrame });
-                F.door(b, axis, c, mid, d.a1, 0, DOOR_H, { open: true, into: -intoSign(r, e, d.room), glass, frame: glassFrame });
+                F.door(b, axis, c, d.a0, d.a1, 0, DOOR_H, { open: true, double: true, into: intoSign(r, e, d.room), glass, frame: glassFrame });
               } else {
                 F.door(b, axis, c, d.a0, d.a1, 0, DOOR_H, { open: d.open, into: d.room ? intoSign(r, e, d.room) : 1, glass, frame: glass ? glassFrame : rng.pick(['metal', 'white']) });
               }
             }
             if (o.core) {
-              const core = o.core;
-              const eCore = core === r ? e : OPP[e];
-              const side = -intoSign(r, e, core); // outward from the core
-              if (core.elevSide === undefined) core.elevSide = eCore;
-              if (core.elevSide === eCore && seg.a1 - seg.a0 > 3) F.elevators(b, axis, c, seg.a0 + 0.6, seg.a1 - 0.6, 0, side, T);
-              else if (seg.a1 - seg.a0 > 4) {
-                // Washroom doors.
-                for (const t of [0.3, 0.7]) {
-                  const m = seg.a0 + (seg.a1 - seg.a0) * t;
-                  F.door(b, axis, c, m - 0.45, m + 0.45, 0, DOOR_H, { open: false, frame: 'metal', leaf: 'doorWhite' });
-                  b.wallBox('darkMetal', axis, c, m + 0.6, m + 0.8, 1.45, 1.65, ...(side > 0 ? [T / 2, T / 2 + 0.02] : [-T / 2 - 0.02, -T / 2]));
-                }
+              const side = -intoSign(r, e, o.core); // outward from the core
+              if (o.lifts) F.elevators(b, axis, c, seg.a0 + 0.6, seg.a1 - 0.6, 0, side, T);
+              for (const m of wash || []) {
+                F.door(b, axis, c, m - 0.45, m + 0.45, 0, DOOR_H, { open: false, frame: 'metal', leaf: 'doorWhite' });
+                b.wallBox('darkMetal', axis, c, m + 0.6, m + 0.8, 1.45, 1.65, ...(side > 0 ? [T / 2, T / 2 + 0.03] : [-T / 2 - 0.03, -T / 2]));
               }
             }
-            record(r, e, seg, o.style, o.ops, 0);
-            record(q, OPP[e], seg, o.style, o.ops, 0);
-            reserveOps(r, axis, c, o.ops);
-            reserveOps(q, axis, c, o.ops);
+            // Lift doors block the wall for pictures and the floor for furniture.
+            const used = o.lifts ? [...o.ops, { a0: seg.a0 + 0.3, a1: seg.a1 - 0.3, top: 0 }] : o.ops;
+            record(r, e, seg, o.style, used, 0);
+            record(q, OPP[e], seg, o.style, used, 0);
+            reserveOps(r, axis, c, used);
+            reserveOps(q, axis, c, used);
           } else if (q) {
             // Upstairs: glass fronts onto the atrium, solid walls between rooms.
             const up = r === atrium ? q : q === atrium ? r : null;
@@ -406,7 +416,7 @@ export function generateOffice(seed) {
                 }
               }
               glassWall(axis, c, seg.a0, seg.a1, y0, y0 + CEIL, ops);
-              along(axis, c, seg.a0, y0 + CEIL, seg.a1, y1, -T / 2, T / 2, 'wall', true);
+              along(axis, c, seg.a0, y0 + CEIL - BULK, seg.a1, y1, -T / 2, T / 2, 'wall', true);
               const ue = up === r ? e : OPP[e];
               record(up, ue, seg, 'glass', ops, level);
               reserveOps(up, axis, c, ops);
@@ -440,7 +450,7 @@ export function generateOffice(seed) {
     }
     if (r === atrium) continue;
     b.box(`ceil:${r.ceiling}`, r.x0, y + CEIL, r.z0, r.x1, y + CEIL + 0.04, r.z1);
-    b.box('ceil:roof', r.x0 - 0.1, y + FH - 0.3, r.z0 - 0.1, r.x1 + 0.1, y + FH - 0.04, r.z1 + 0.1, false);
+    b.box('ceil:roof', r.x0 - 0.08, y + FH - 0.3, r.z0 - 0.08, r.x1 + 0.08, y + FH - 0.04, r.z1 + 0.08, false);
   }
 
   // Atrium ceiling: skylight, a grid of light panels, and sometimes a
@@ -542,22 +552,18 @@ export function generateOffice(seed) {
   const decor = furnish(ctx);
 
   // ------------------------------------------------------------- exterior
-  const elev = rng.range(24, 80); // this floor's height above the street
-  b.box('ground', fp.x0 - 900, -elev - 0.2, fp.z0 - 900, fp.x1 + 900, -elev, fp.z1 + 900, false);
-  const towers = [];
-  const pad = 26;
-  for (let i = 0; i < 220; i++) {
-    const a = rng.range(0, Math.PI * 2);
-    const near = i < 24;
-    const dist = near ? rng.range(40, 110) : rng.range(90, 900);
-    const x = Math.cos(a) * dist;
-    const z = Math.sin(a) * dist;
-    const w = rng.range(16, 42);
-    const d = rng.range(16, 42);
-    if (x + w / 2 > fp.x0 - pad && x - w / 2 < fp.x1 + pad && z + d / 2 > fp.z0 - pad && z - d / 2 < fp.z1 + pad) continue;
-    const h = elev * rng.range(0.4, 1.3) + rng.range(0, 1) ** 2 * rng.range(20, 220);
-    towers.push({ x, z, w, d, y0: -elev, h });
-  }
+  // The city around the tower, with this floor 24-80 m above the street.
+  const elev = rng.range(24, 80);
+  const skyline = planSkyline(rng, {
+    site: fp,
+    groundY: -elev,
+    radius: 1150,
+    downtown: { x: rng.range(-250, 250), z: rng.range(-250, 250) },
+    tints: ['#f3f3f1', '#f3f3f1', '#eef0f2', '#e4e9ee', '#d6e2ec', '#f2ede6', '#e6e8ea'],
+    rise: rng.range(0.9, 1.3),
+    sitePad: true,
+  });
+  b.box('ground', fp.x0 - 1400, -elev - 0.2, fp.z0 - 1400, fp.x1 + 1400, -elev, fp.z1 + 1400, false);
 
   // Sun from outside the atrium's facade.
   const baseAz = { S: 0, E: 90, N: 180, W: 270 }[plan.face];
@@ -578,7 +584,7 @@ export function generateOffice(seed) {
     floors,
     sky,
     stair,
-    towers,
+    skyline,
     elev,
     decor,
     sun: { azimuth: (baseAz + rng.range(-40, 40) + 360) % 360, elevation: rng.range(26, 44) },

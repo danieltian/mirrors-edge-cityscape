@@ -170,8 +170,8 @@ export function cafeTable(b, x, y, z, key = 'whiteGloss') {
 }
 
 // Architectural model of towers on a white base.
-export function cityModel(b, rng, x, y, z, w, d) {
-  const f = b.frame(x, y, z, 0);
+export function cityModel(b, rng, x, y, z, w, d, rot = 0) {
+  const f = b.frame(x, y, z, rot);
   f.box('model', -w / 2, 0, -d / 2, w / 2, 0.02, d / 2);
   const n = rng.int(4, 9);
   for (let i = 0; i < n; i++) {
@@ -256,7 +256,7 @@ export function receptionDesk(b, rng, x, y, z, rot, w) {
   f.geo('white', rbox(w, 1.05, 0.9, 0.04), 0, 0.525, 0);
   f.box('accent', -w / 2 - 0.005, 0.18, 0.45, w / 2 + 0.005, 0.26, 0.456);
   f.box('accent', -w / 2 - 0.005, 0.32, 0.45, w / 2 + 0.005, 0.36, 0.456);
-  f.box('accent', -w / 2 - 0.005, 0, -0.45, w / 2 + 0.005, 0.1, 0.456);
+  f.box('accent', -w / 2 - 0.005, 0, -0.43, w / 2 + 0.005, 0.1, 0.456);
   f.geo('whiteGloss', rbox(w + 0.08, 0.04, 1.02, 0.015), 0, 1.07, 0.04);
   f.box('whiteGloss', -w / 2, 0.72, -0.95, w / 2, 0.76, -0.45);
   const n = Math.max(1, Math.floor(w / 1.6));
@@ -402,7 +402,7 @@ export function displayCase(b, rng, x, y, z, rot, { w = 0.9, d = 0.7, key = 'acc
   }
   for (const sz of [-1, 1]) f.box('metal', -w / 2, top - 0.02, sz * d / 2 - 0.012, w / 2, top, sz * d / 2 + 0.012);
   const p = f.point(0, 0, 0);
-  cityModel(b, rng, p.x, y + base + 0.02, p.z, w - 0.2, d - 0.2);
+  cityModel(b, rng, p.x, y + base + 0.02, p.z, w - 0.2, d - 0.2, rot);
   f.collide(-w / 2, 0, -d / 2, w / 2, top, d / 2);
 }
 
@@ -520,7 +520,7 @@ export function sculpture(b, rng, x, y, z, key = 'accent') {
 export function downlight(b, x, y, z) {
   const f = b.frame(x, y, z, 0);
   f.geo('ceil:metal', CYL, 0, -0.008, 0, 0, 0.1, 0.016, 0.1);
-  f.geo('ceil:emissive', DISC_DOWN, 0, -0.017, 0, 0, 0.07, 1, 0.07);
+  f.geo('ceil:emissive', DISC_DOWN, 0, -0.02, 0, 0, 0.07, 1, 0.07);
 }
 
 export function smokeDetector(b, x, y, z) {
@@ -549,7 +549,7 @@ export function pendantRing(b, x, y, z, R, ceilY) {
 export function pendantDisc(b, x, y, z, r, ceilY, key = 'white') {
   const f = b.frame(x, y, z, 0);
   f.geo(`ceil:${key}`, CYL, 0, 0.05, 0, 0, r, 0.1, r);
-  f.geo('ceil:emissive', DISC_DOWN, 0, -0.002, 0, 0, r * 0.88, 1, r * 0.88);
+  f.geo('ceil:emissive', DISC_DOWN, 0, -0.005, 0, 0, r * 0.88, 1, r * 0.88);
   const len = ceilY - y - 0.1;
   for (const s of [-1, 1]) f.geo('ceil:metal', CYL8, s * r * 0.5, 0.1 + len / 2, 0, 0, 0.006, len, 0.006);
 }
@@ -557,10 +557,11 @@ export function pendantDisc(b, x, y, z, r, ceilY, key = 'white') {
 // Square suspended panel with an L of light underneath (meeting rooms).
 export function pendantSquare(b, x, y, z, s, ceilY, key = 'accent', rot = 0) {
   const f = b.frame(x, y, z, rot);
-  f.box(`ceil:${key}`, -s / 2, 0, -s / 2, s / 2, 0.06, s / 2);
-  f.box('ceil:metal', -s / 2 - 0.01, 0, -s / 2 - 0.01, s / 2 + 0.01, 0.012, s / 2 + 0.01);
-  f.box('ceil:emissive', -s * 0.32, -0.006, -0.03, s * 0.32, 0, 0.03);
-  f.box('ceil:emissive', -s * 0.32, -0.006, -0.03, -s * 0.32 + 0.06, 0, s * 0.3);
+  // Coloured body on a slightly larger metal base plate: no shared faces.
+  f.box(`ceil:${key}`, -s / 2, 0.014, -s / 2, s / 2, 0.07, s / 2);
+  f.box('ceil:metal', -s / 2 - 0.01, 0, -s / 2 - 0.01, s / 2 + 0.01, 0.014, s / 2 + 0.01);
+  f.box('ceil:emissive', -s * 0.32, -0.008, -0.03, s * 0.32, 0, 0.03);
+  f.box('ceil:emissive', -s * 0.32, -0.008, 0.03, -s * 0.32 + 0.06, 0, s * 0.3);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) f.geo('ceil:metal', CYL8, sx * s * 0.4, 0.06 + (ceilY - y - 0.06) / 2, sz * s * 0.4, 0, 0.005, ceilY - y - 0.06, 0.005);
 }
 
@@ -629,7 +630,7 @@ export function whiteboard(b, x, y, z, rot, w) {
   const f = b.frame(x, y, z, rot);
   const h = w * 0.55;
   f.box('metal', -w / 2 - 0.02, -0.02, 0, w / 2 + 0.02, h + 0.02, 0.02);
-  f.box('whiteGloss', -w / 2, 0, 0.001, w / 2, h, 0.03);
+  f.box('whiteGloss', -w / 2, 0, 0.004, w / 2, h, 0.03);
   f.box('metal', -w / 2 + 0.1, -0.05, 0, w / 2 - 0.1, -0.02, 0.07);
 }
 
@@ -648,7 +649,7 @@ export function monogramSign(b, x, y, z, rot, w, key = 'mono') {
 // Pool of light washing down a wall from a nearby downlight.
 export function scallop(b, x, yTop, z, rot, w = 1.3, h = 2.5) {
   const f = b.frame(x, 0, z, rot);
-  f.geo('scallop', PLANE, 0, yTop - h / 2, 0.024, 0, w, h, 1);
+  f.geo('scallop', PLANE, 0, yTop - h / 2, 0.004, 0, w, h, 1);
 }
 
 export function exitSign(b, x, y, z, rot) {
@@ -667,50 +668,62 @@ export function pylon(b, x, y, z, rot, h, key = 'pylon') {
 
 // Door frame (and leaf) in an opening of a wall running along `axis` at `c`.
 // open: leaf swung 90 degrees toward side `into` (+1 / -1 along the wall
-// normal); otherwise the leaf closes the opening.
-export function door(b, axis, c, a0, a1, y, top, { open = true, into = 1, glass = false, frame = 'metal', leaf = 'doorWhite', T = 0.2 }) {
+// normal); otherwise the leaf closes the opening. double: a pair of leaves
+// hinged at both jambs, the second one swung toward `into2`.
+// The frame lines the opening: jambs and head sit a little inside the
+// wall's reveals and soffit and stand proud of any cladding, so no face of
+// the frame is ever coplanar with the wall it sits in.
+export function door(b, axis, c, a0, a1, y, top, { open = true, into = 1, into2 = -into, double = false, glass = false, frame = 'metal', leaf = 'doorWhite', T = 0.2 }) {
   const ft = T / 2 + 0.04; // architraves stand proud of any wall cladding
-  b.wallBox(frame, axis, c, a0 - 0.05, a0, y, y + top + 0.05, -ft, ft);
-  b.wallBox(frame, axis, c, a1, a1 + 0.05, y, y + top + 0.05, -ft, ft);
-  b.wallBox(frame, axis, c, a0, a1, y + top, y + top + 0.05, -ft, ft);
-  const wl = a1 - a0 - 0.01;
+  const lin = 0.014; // lining depth inside the reveal
+  b.wallBox(frame, axis, c, a0 - 0.05, a0 + lin, y, y + top - lin, -ft, ft);
+  b.wallBox(frame, axis, c, a1 - lin, a1 + 0.05, y, y + top - lin, -ft, ft);
+  b.wallBox(frame, axis, c, a0 - 0.05, a1 + 0.05, y + top - lin, y + top + 0.05, -ft, ft);
+  const i0 = a0 + lin + 0.004;
+  const i1 = a1 - lin - 0.004;
   const lk = glass ? 'glass' : leaf;
   const t = 0.045;
   const col = glass ? { glass: true } : undefined;
   const panel = (x0, z0, x1, z1) => {
-    b.box(lk, x0, y + 0.01, z0, x1, y + top - 0.005, z1, false);
+    b.box(lk, x0, y + 0.01, z0, x1, y + top - lin - 0.006, z1, false);
     b.collider(x0, y, z0, x1, y + top, z1, col);
   };
+  const box = (a, b0, n0, n1, y0, y1, key) => {
+    if (axis === 'x') b.box(key, a, y0, n0, b0, y1, n1, false);
+    else b.box(key, n0, y0, a, n1, y1, b0, false);
+  };
   if (!open) {
-    if (axis === 'x') panel(a0 + 0.005, c - t / 2, a1 - 0.005, c + t / 2);
-    else panel(c - t / 2, a0 + 0.005, c + t / 2, a1 - 0.005);
-    const hx = a1 - 0.12;
-    if (axis === 'x') for (const s of [-1, 1]) b.box('metal', hx - 0.08, y + 1.02, c + s * (t / 2 + 0.03) - 0.01, hx + 0.02, y + 1.05, c + s * (t / 2 + 0.03) + 0.01, false);
-    else for (const s of [-1, 1]) b.box('metal', c + s * (t / 2 + 0.03) - 0.01, y + 1.02, hx - 0.08, c + s * (t / 2 + 0.03) + 0.01, y + 1.05, hx + 0.02, false);
+    if (axis === 'x') panel(i0, c - t / 2, i1, c + t / 2);
+    else panel(c - t / 2, i0, c + t / 2, i1);
+    const hx = i1 - 0.1;
+    for (const s of [-1, 1]) box(hx - 0.08, hx + 0.02, c + s * (t / 2 + 0.03) - 0.01, c + s * (t / 2 + 0.03) + 0.01, y + 1.02, y + 1.05, 'metal');
     return;
   }
-  const n0 = c + into * (T / 2 + 0.02);
-  const n1 = c + into * (T / 2 + 0.02 + wl);
-  if (axis === 'x') {
-    panel(a0 + 0.005, Math.min(n0, n1), a0 + 0.005 + t, Math.max(n0, n1));
+  // Open leaves stand just clear of the architraves.
+  const swing = (h0, h1, side, w) => {
+    const n0 = c + side * (ft + 0.006);
+    const n1 = c + side * (ft + 0.006 + w);
+    const lo = Math.min(n0, n1);
+    const hi = Math.max(n0, n1);
+    if (axis === 'x') panel(h0, lo, h1, hi);
+    else panel(lo, h0, hi, h1);
     if (glass) {
-      b.box('metal', a0 - 0.006, y, Math.min(n0, n1) - 0.01, a0 + t + 0.016, y + 0.12, Math.max(n0, n1) + 0.01, false);
-      b.box('metal', a0 - 0.006, y + top - 0.07, Math.min(n0, n1) - 0.01, a0 + t + 0.016, y + top - 0.005, Math.max(n0, n1) + 0.01, false);
+      box(h0 - 0.012, h1 + 0.012, lo - 0.012, hi + 0.012, y + 0.004, y + 0.12, 'metal');
+      box(h0 - 0.012, h1 + 0.012, lo - 0.012, hi + 0.012, y + top - lin - 0.08, y + top - lin - 0.01, 'metal');
     }
-  } else {
-    panel(Math.min(n0, n1), a0 + 0.005, Math.max(n0, n1), a0 + 0.005 + t);
-    if (glass) {
-      b.box('metal', Math.min(n0, n1) - 0.01, y, a0 - 0.006, Math.max(n0, n1) + 0.01, y + 0.12, a0 + t + 0.016, false);
-      b.box('metal', Math.min(n0, n1) - 0.01, y + top - 0.07, a0 - 0.006, Math.max(n0, n1) + 0.01, y + top - 0.005, a0 + t + 0.016, false);
-    }
-  }
+  };
+  if (double) {
+    const w = (i1 - i0) / 2;
+    swing(i0, i0 + t, into, w);
+    swing(i1 - t, i1, into2, w);
+  } else swing(i0, i0 + t, into, i1 - i0);
 }
 
 // Lift doors on one face (`side` = +1 / -1 along the normal) of a wall.
 export function elevators(b, axis, c, a0, a1, y, side, T = 0.2) {
   const n = Math.max(1, Math.min(4, Math.floor((a1 - a0 - 0.8) / 2.3)));
   const pitch = (a1 - a0) / n;
-  const f0 = side * (T / 2);
+  const f0 = side * (T / 2 + 0.016); // in front of any cladding
   const out = (o0, o1) => [Math.min(f0 + side * o0, f0 + side * o1), Math.max(f0 + side * o0, f0 + side * o1)];
   for (let i = 0; i < n; i++) {
     const m = a0 + pitch * (i + 0.5);

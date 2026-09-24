@@ -13,7 +13,7 @@ export function createGui({ look, applyLook, director, current, newWorld, setAcc
   const cityF = gui.addFolder('World');
   const cityState = { seed: current().seed };
   cityF.add(cityState, 'seed').name('Seed').listen().onFinishChange((v) => newWorld(current().kind, Math.max(1, Math.floor(Number(v)) || 1)));
-  cityF.add({ go: () => newWorld() }, 'go').name('Generate new (N)');
+  cityF.add({ go: () => newWorld() }, 'go').name('New seed (N)');
   cityF.add(look, 'accents').name('Accents (C)').listen().onChange((v) => setAccents(v));
   cityF.add(stats, 'text').name('Info').disable().listen();
 
@@ -21,13 +21,14 @@ export function createGui({ look, applyLook, director, current, newWorld, setAcc
   mus.add(musicPrefs, 'on').name('Play (M)').listen().onChange((v) => musicPrefs.set(v));
   mus.add(musicPrefs, 'tune').name('Now playing').disable().listen();
   mus.add(musicPrefs, 'next').name('Next tune (Shift+M)');
+  mus.add(musicPrefs, 'style', { Any: 'any', Menu: 'menu', 'Run (Pirandello Kruger)': 'kruger', 'Drift (beatless)': 'drift', Glass: 'glass', Breaks: 'breaks' }).name('Style').onChange((v) => musicPrefs.setStyle(v));
   mus.add(musicPrefs, 'volume', 0, 1, 0.01).name('Volume').onChange((v) => musicPrefs.setVolume(v));
   mus.add(musicPrefs, 'url').name('Custom track URL').onFinishChange((v) => musicPrefs.setUrl(v));
   mus.close();
 
   const cam = gui.addFolder('Camera');
   cam.add(director, 'driftSpeed', 0, 4, 0.05).name('Drift speed');
-  cam.add(director.tour, 'interval', 10, 120, 1).name('Tour interval (s)');
+  cam.add(director.cut, 'interval', 4, 60, 1).name('Drift: new view every (s)');
   cam.add(director, 'autoResume', 0, 180, 5).name('Auto-resume drift (s)');
 
   const light = gui.addFolder('Light');

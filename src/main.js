@@ -95,6 +95,7 @@ const musicPrefs = {
   on: store.get('music', 'on') === 'on',
   volume: Number(store.get('volume', '0.7')),
   url: store.get('music-url', ''),
+  style: store.get('music-style', 'any'),
   set(on) {
     this.on = on;
     store.set('music', on ? 'on' : 'off');
@@ -112,11 +113,18 @@ const musicPrefs = {
     store.set('music-url', this.url);
     music.setCustomUrl(this.url);
   },
+  setStyle(v) {
+    this.style = v;
+    store.set('music-style', v);
+    music.forceStyle = v === 'any' ? null : v;
+    music.nextTune();
+  },
 };
 musicPrefs.tune = '(starts on first click)';
 musicPrefs.next = () => music.nextTune();
 music.volume = musicPrefs.volume;
 music.customUrl = musicPrefs.url;
+music.forceStyle = musicPrefs.style === 'any' ? null : musicPrefs.style;
 
 // A small, clickable hint while music is wanted but the browser is still
 // waiting for a user gesture.
@@ -323,6 +331,7 @@ setTimeout(() => {
     director,
     getWorld: () => kind,
     setWorld: (k) => k !== kind && newWorld(k),
+    getSeed: () => city?.seed ?? office?.seed ?? mall?.seed,
     getAccents: () => look.accents,
     setAccents,
     toggleSettings: () => gui.toggle(),

@@ -13,14 +13,13 @@ Add `?seed=1234` to the URL to reproduce a specific city, or `?world=office&seed
 
 | Key | Action |
 | --- | --- |
-| O | Cycle through the **City**, **Office** and **Mall** worlds |
-| Space | Toggle **Drift** (automatic camera) / **Explore** |
+| 1 / 2 / 3 | Switch to the **City**, **Office** or **Mall** world (O cycles through them) |
+| Space | Toggle **Drift** (automatic tour, a new view every 8 s) / **Explore** |
 | R | Jump to a random viewpoint |
 | I | Toggle perspective / isometric |
-| T | Tour: cycle viewpoints automatically |
 | C | Colour accents on/off |
 | M | Music on/off (Shift+M: next tune) |
-| N | Generate a new city / office / mall |
+| N | New seed: generate a new city / office / mall |
 | G | Settings panel |
 | H | Hide the control dock |
 | F | Fullscreen |
@@ -28,7 +27,7 @@ Add `?seed=1234` to the URL to reproduce a specific city, or `?world=office&seed
 **Explore, perspective:** drag to look, right-drag to pan, scroll to zoom, WASD to fly, Q/E to go down/up, Shift for speed.
 **Explore, isometric:** drag to pan, right-drag to rotate, scroll to zoom, WASD to move, Q/E to rotate 90°.
 
-Dragging, scrolling or pressing a movement key while drifting switches to Explore.
+Every dock button shows its shortcut. The mouse and movement keys only steer in Explore; clicking while drifting (for example to start the music) leaves the tour running. How long Drift holds each view is in Settings → Camera.
 
 ## Office world
 
@@ -62,6 +61,8 @@ In Drift the camera tours the floor, always heading somewhere it hasn't shown ye
 
 After 8–11 shots it moves on to a freshly generated office. Explore uses collision against the walls and furniture. Isometric shows the whole floor as a cut-away dollhouse.
 
+Outside the windows is a whole city (shared with the mall, `src/render/skyline.js`): a street grid of blocks on raised pavements, filled with podium towers, stepped towers, twin towers, slabs and low-rise blocks with parapets, rooftop plant and masts, plus parks and paved squares with trees. The tallest cluster sits around a downtown centre, and the floor is 24–80 m up, so some roofs are below the windows and some towers rise above them.
+
 ## Mall world
 
 A shopping mall in the spirit of the game's New Eden Mall, generated from a seed. No two come out alike:
@@ -81,32 +82,29 @@ A shopping mall in the spirit of the game's New Eden Mall, generated from a seed
 - **Shops:** the mix of shutters, lit glass fronts and billboard bays and the unit widths vary from mall to mall, under signs for invented brands.
 - **Colour:** mostly amber like the game, but also tangerine, lemon, coral, lime, aqua, scarlet, violet, green or sky blue, each with its own banner colour.
 - **Light:** sun comes only through the skylight, so the void is bright and the galleries fall into warm shade the further they are from it. The accent colour tints the shadows.
-- **Outside:** a glazed entrance box with diagonal struts and the mall's name faces a sunny plaza with planters, white trees, benches, banner poles, billboards and a colonnade. Some plazas have a fountain or an outdoor café with umbrellas.
+- **Outside** (`src/mall/exterior.js`), each part chosen separately:
+  - entrance: a glazed box with diagonal struts, a cantilevered canopy on posts or tie rods, a glass barrel vault, a giant portal frame, a glass drum with a roof disc, a space-frame canopy on branching tree columns, or a colonnaded loggia between wing walls
+  - facade: stone with string courses, bold accent bands, white fins, a panel grid with accent squares, or ribbon glazing on the upper floors, in one of seven stone tints, with 0–2 giant billboards
+  - plaza: a framed square, a raised terrace with grand steps down to the street, a sunken court with a fountain or tree, reflecting pools with jets, a grid of white trees, a drop-off loop with a bus shelter, or lawns with sculptures; its size, paving pattern (grid, bands, a central runway), lamps and banner poles vary too
+  - either side: a colonnaded block with shops, an office tower over a glazed lobby, a car park, or an open street edge lined with trees
+  - beyond: the same street-grid city as the office, with the tallest towers rising behind the mall
 
 In Drift the camera rides the escalators, leans over the railings, walks the galleries, looks up from the court at the balconies and skylight, looks along the void from a bridge and crosses the plaza to the entrance. After 8–10 shots it moves on to a new mall. Isometric cuts the building open above the first gallery.
 
 ## Music
 
-The soundtrack is generated, not recorded: ambient electronic in the spirit of the game's menu music. Each tune is composed on the fly and synthesised live with Web Audio, so there are no audio files and no copyrighted material.
+The soundtrack is generated, not recorded: ambient electronic in the spirit of Solar Fields' Mirror's Edge score. Each tune is composed on the fly and synthesised live with Web Audio, so there are no audio files and no copyrighted material.
 
-`src/audio/composer.js` writes each tune:
-- a minor key (Aeolian, Dorian or Phrygian) and a tempo of 98–118 BPM
-- a slow chord loop with open, cold voicings, sometimes over a sustained bass note
-- a 16th-note synth sequence
-- a short, sparse electric-piano motif that repeats with small variations
-- an arrangement that builds from an intro, grows into the main groove, drops to a breakdown, returns and fades out
+`src/audio/composer.js` writes each tune in a minor key (Aeolian, Dorian or Phrygian) with open, cold chord voicings, in one of five styles:
+- **Menu** (98–118 BPM): like the title screen. A soft four-on-the-floor with side-chain pumping, a 16th-note sequence through a sweeping resonant filter, a pulsing sub and a sparse electric-piano motif.
+- **Run** (136–146 BPM, after "Pirandello Kruger"): fast but felt half-time. A breakbeat with the snare on the three, shuffling 16th hats and open hats, and a rolling off-beat bass. A glassy arpeggio cycles 3, 5, 6 or 7 steps against the bar so it drifts across the beat, soaked in delay. A slow FM bell melody sits over it, with glitchy stutters, risers and reverse swells, and the tune builds, breaks down and returns over several minutes. It often sits in B♭ minor like the original.
+- **Drift** (70–84 BPM, beatless): long glassy or choir pads, a sub drone, sparkles, a sparse bell, sometimes a soft heartbeat kick.
+- **Glass** (118–128 BPM): minimal and IDM-like. A plucked 5- or 7-step arpeggio, rim shots and clicks, a syncopated sub and a formant "choir" pad.
+- **Breaks** (84–96 BPM): downtempo. A swung breakbeat, a deep sub, electric-piano chord stabs and a bell melody in the lift.
 
-`src/audio/music.js` plays each tune with:
-- stereo pads
-- the sequence through a sweeping resonant filter
-- a pulsing sub-bass
-- a soft deep kick with side-chain pumping
-- crisp hats, sparse claps, digital ticks and noise risers
-- a mellow FM electric piano soaked in ping-pong delay and reverb
+Arrangements have intros, builds, breaks and outros, with a second chord progression for the middle sections. `src/audio/music.js` plays them on a small synth rig: saw, warm, choir and glass pads; plucks; FM bells and electric piano; rolling and sub basses; kick, snare, hats, rim, clap and ticks; stutters, sparkles, risers and swells. Everything shares a ping-pong delay and a long reverb. A new tune starts when one ends, after about two to three minutes.
 
-A new tune starts when one ends, after about two minutes.
-
-Browsers don't allow audio before you interact with the page, so a small "Click anywhere for music" hint shows until your first click, tap or keypress. **M** toggles the music, **Shift+M** skips to a new tune, and the choice is remembered. Under Settings → Music you can see what's playing, change the volume, or set a **Custom track URL**: a direct link to an audio file you have the rights to, played in a loop instead. YouTube and SoundCloud page links won't work there, since those services only allow playback through their own visible players.
+Browsers don't allow audio before you interact with the page, so a small "Click anywhere for music" hint shows until your first click, tap or keypress. **M** toggles the music, **Shift+M** skips to a new tune, and the choice is remembered. Under Settings → Music you can see what's playing, pick a style (or leave it on Any), change the volume, or set a **Custom track URL**: a direct link to an audio file you have the rights to, played in a loop instead. YouTube and SoundCloud page links won't work there, since those services only allow playback through their own visible players.
 
 ## Deploying (GitHub Pages)
 

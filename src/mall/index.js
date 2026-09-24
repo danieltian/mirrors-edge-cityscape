@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { buildSkyline } from '../render/skyline.js';
 import { RNG } from '../util/rng.js';
 import { generateMall } from './generator.js';
 import { inPoly, FH } from './plan.js';
@@ -106,12 +107,15 @@ function createMaterials(o) {
     wallAccent2: std({ color: pal.accent2, map: tx.panel.map, normalMap: tx.panel.normalMap, roughness: 0.7 }),
     mosaic: std({ color: pal.accent2, map: tx.mosaic.map, normalMap: tx.mosaic.normalMap, roughness: 0.35 }),
     mosaicBlue: std({ color: '#2f6fd0', map: tx.mosaic.map, normalMap: tx.mosaic.normalMap, roughness: 0.35 }),
-    stone: std({ color: '#efcdb6', map: tx.panel.map, normalMap: tx.panel.normalMap, roughness: 0.85 }),
-    stoneBand: std({ color: '#f6e4d6', roughness: 0.8 }),
+    stone: std({ color: o.style.exterior.stone, map: tx.panel.map, normalMap: tx.panel.normalMap, roughness: 0.85 }),
+    stoneBand: std({ color: new THREE.Color(o.style.exterior.stone).lerp(new THREE.Color('#ffffff'), 0.45), roughness: 0.8 }),
+    lawn: std({ color: '#a9c486', roughness: 1 }),
     concrete: std({ map: tx.concrete.map, normalMap: tx.concrete.normalMap, roughness: 0.88 }),
     accent: std({ color: pal.accent, roughness: 0.55 }),
     accentGloss: std({ color: pal.accent, roughness: 0.28 }),
     accentGlossDouble: std({ color: pal.accent2, roughness: 0.3, metalness: 0.2, side: THREE.DoubleSide }),
+    whiteDouble: std({ color: white, roughness: 0.3, side: THREE.DoubleSide }),
+    metalDouble: std({ color: '#cfd3d8', metalness: 1, roughness: 0.35, side: THREE.DoubleSide }),
     accent2: std({ color: pal.accent2, roughness: 0.5 }),
     upholstery: std({ color: pal.accent, roughness: 0.55, ...leatherN }),
     upholsteryWhite: std({ color: '#ecebe7', roughness: 0.6, ...leatherN }),
@@ -129,7 +133,7 @@ function createMaterials(o) {
     shutter: std({ map: tx.shutter.map, normalMap: tx.shutter.normalMap, roughness: 0.45, metalness: 0.3 }),
     shopDark: std({ color: '#23262b', roughness: 0.3 }),
     model: std({ color: '#f5f5f3', roughness: 0.6 }),
-    ground: std({ color: '#c8c3bb', roughness: 1 }, noShadow),
+    ground: std({ color: '#96918a', roughness: 1 }, noShadow), // streets between the pavements
     facade: facadeMaterial(tx.facade),
     scallop: new THREE.MeshBasicMaterial({ map: tx.scallop, color: new THREE.Color(0.6, 0.58, 0.54), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
     exit: std({ color: '#000000', emissive: '#ffffff', emissiveMap: tx.exit, emissiveIntensity: 1.3, roughness: 0.4 }, noShadow),
@@ -153,7 +157,7 @@ function createMaterials(o) {
   };
   m.scallop.userData.castShadow = false;
   m.scallop.userData.receiveShadow = false;
-  const glossy = { water: 1.6, inlayDark: 0.5, parapet: 0.4, floorTile: 0.45, whiteGloss: 0.6, accentGloss: 0.6, accentGlossDouble: 0.6, blackGloss: 0.8, metal: 1.1, darkMetal: 0.9, steps: 0.8, glass: 2, blueGlass: 1.5, mosaic: 0.6, mosaicBlue: 0.6, shutter: 0.5, wood: 0.5, upholstery: 0.25, leather: 0.5, shopDark: 0.8 };
+  const glossy = { water: 1.6, inlayDark: 0.5, parapet: 0.4, floorTile: 0.45, whiteGloss: 0.6, accentGloss: 0.6, accentGlossDouble: 0.6, whiteDouble: 0.5, metalDouble: 1.0, blackGloss: 0.8, metal: 1.1, darkMetal: 0.9, steps: 0.8, glass: 2, blueGlass: 1.5, mosaic: 0.6, mosaicBlue: 0.6, shutter: 0.5, wood: 0.5, upholstery: 0.25, leather: 0.5, shopDark: 0.8 };
   for (const [k, mat] of Object.entries(m)) if (mat.isMeshStandardMaterial) mat.envMapIntensity = glossy[k] ?? 0.12;
   const accentKeys = ['accent', 'accentGloss', 'accentGlossDouble', 'accent2', 'upholstery', 'wallAccent', 'wallAccent2', 'mosaic', 'rug', 'parapet', 'canvas'];
   const original = Object.fromEntries(accentKeys.map((k) => [k, m[k].color.clone()]));
@@ -254,21 +258,9 @@ export function createMall(seed, { mirror } = {}) {
     patch(mat, U, k === 'floorTile' || k === 'paving');
   }
 
-  // Skyline.
-  const unit = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
-  const towers = new THREE.InstancedMesh(unit, mats.materials.facade, o.towers.length);
-  const m4 = new THREE.Matrix4();
-  const q = new THREE.Quaternion();
-  const col = new THREE.Color();
-  o.towers.forEach((t, i) => {
-    m4.compose(new THREE.Vector3(t.x, t.y0, t.z), q, new THREE.Vector3(t.w, t.h, t.d));
-    towers.setMatrixAt(i, m4);
-    towers.setColorAt(i, col.set(t.tint));
-  });
-  towers.userData.group = 'backdrop';
-  towers.castShadow = false;
-  towers.receiveShadow = false;
-  group.add(towers);
+  // The city around the mall.
+  const skyline = buildSkyline(o.skyline, mats.materials.facade);
+  for (const c of [...skyline.children]) group.add(c);
 
   const cutGroups = group.children.filter((c) => c.userData.group === 'ceil' || c.userData.group === 'backdrop');
   const colliders = o.colliders;
@@ -280,11 +272,12 @@ export function createMall(seed, { mirror } = {}) {
   const onBridge = (L, x, z) => P.bridges.some((br) => br.level === L && x > br.x0 && x < br.x1 && z > V.z0 && z < V.z1);
   const E = P.entrance;
   const VB = o.vestibule;
+  const W = o.exterior.walk;
   const walk0 = (x, z) =>
     inG(x, z) ||
     (x > E.x0 && x < E.x1 && z >= G.z1 - 0.1 && z < o.building.z1 + 0.5) ||
     (x > VB.x0 && x < VB.x1 && z > VB.z0 - 0.5 && z < VB.z1 + 0.5) ||
-    (x > P.plaza.x0 && x < P.plaza.x1 && z > VB.z1 && z < P.plaza.z1);
+    (x > W.x0 && x < W.x1 && z > W.z0 && z < W.z1);
   const navs = [new NavGrid(fp, { cell: 0.4, band: [0.15, 2.0], colliders, walkable: walk0, inflate: 0.25 })];
   const ub = o.building;
   for (let L = 1; L < o.levels; L++) {
@@ -350,8 +343,7 @@ export function createMall(seed, { mirror } = {}) {
     },
     dispose() {
       group.traverse((c) => c.geometry?.dispose());
-      unit.dispose();
-      towers.dispose();
+      skyline.userData.dispose();
       bounce.dispose();
       mats.dispose();
     },

@@ -104,13 +104,28 @@ body {
   background: transparent;
   color: var(--ink-soft);
   font: 500 11px/1 var(--font);
-  letter-spacing: 0.14em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  padding: 9px 12px;
+  padding: 9px 10px;
   border-radius: 2px;
   cursor: pointer;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
   transition: background 0.15s, color 0.15s;
+}
+/* Keyboard shortcut badge inside each button. */
+.dock kbd {
+  font: 600 9px/1 var(--font);
+  letter-spacing: 0.06em;
+  margin-left: 6px;
+  padding: 2px 4px 2px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  opacity: 0.45;
+}
+.dock button.on kbd {
+  opacity: 0.75;
 }
 .dock button:hover {
   color: var(--ink);
@@ -136,7 +151,7 @@ body {
   background: rgba(29, 42, 54, 0.05);
 }
 .dock .seg button {
-  padding: 7px 11px;
+  padding: 7px 9px;
 }
 .dock .toggle.on {
   color: var(--accent);
@@ -153,8 +168,6 @@ body {
 }
 .dock .icon {
   padding: 7px 9px;
-  display: grid;
-  place-items: center;
 }
 .dock .sep {
   width: 1px;
@@ -189,13 +202,24 @@ body {
   transform: translate(-50%, 0);
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 1360px) {
   .dock button {
-    letter-spacing: 0.1em;
-    padding: 9px 9px;
+    letter-spacing: 0.06em;
+    padding: 9px 7px;
   }
   .dock .seg button {
-    padding: 7px 8px;
+    padding: 7px 6px;
+  }
+  .dock kbd {
+    margin-left: 5px;
+    padding: 2px 3px;
+  }
+}
+
+/* No keyboard to speak of on touch screens. */
+@media (hover: none) and (pointer: coarse) {
+  .dock kbd {
+    display: none;
   }
 }
 

@@ -1,9 +1,11 @@
 import { composeSong } from './composer.js';
 
 // Plays generated ambient-electronic tunes (see composer.js) on a small Web
-// Audio rig: cold stereo pads, a resonant filtered 16th-note sequence, a
-// pulsing sub, a soft deep kick with side-chain pumping, crisp hats, sparse
-// claps and digital ticks, noise risers, and a mellow FM electric-piano motif
+// Audio rig: cold stereo pads (saw, formant "choir", glassy sine or warm), a
+// resonant filtered 16th-note sequence or plucked polyrhythmic arpeggio, a
+// pulsing, rolling or syncopated sub, a soft deep kick with side-chain
+// pumping, hats, snares, rims, claps and digital ticks, FM bells and a mellow
+// FM electric piano, sparkles, stutters, risers and reverse swells, all
 // drenched in ping-pong delay and a long reverb. A new tune follows each one.
 //
 // Optionally plays a user-supplied audio URL instead (looped).
@@ -54,6 +56,7 @@ export class Music {
     this.customUrl = '';
     this.audio = null;
     this.song = null;
+    this.forceStyle = null; // debugging: always compose this style
     this.onChange = () => {};
     this.onSong = () => {};
   }
@@ -132,6 +135,7 @@ export class Music {
     this.tickBus = bus(0.35, 0.3, 0.5);
     this.fxBus = bus(0.4, 0.6);
     this.texBus = bus(0.3, 0.8);
+    this.leadBus = bus(0.34, 0.85, 0.65);
 
     // Side-chain style pumping on pads, sequence and bass.
     const duck = (to) => {
@@ -148,6 +152,17 @@ export class Music {
     this.padFilter.frequency.value = 900;
     this.padFilter.Q.value = 0.5;
     this.padFilter.connect(this.padDuck);
+    // Formant bank ("ah") for the choir pad.
+    this.choirIn = ctx.createGain();
+    for (const [f, q, g] of [[730, 7, 1], [1090, 9, 0.6], [2440, 10, 0.25]]) {
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = f;
+      bp.Q.value = q;
+      const gg = ctx.createGain();
+      gg.gain.value = g * 2.6;
+      this.choirIn.connect(bp).connect(gg).connect(this.padFilter);
+    }
 
     // The sequence runs through one resonant low-pass whose cutoff sweeps
     // across each section, plus a slow wobble.
@@ -188,29 +203,112 @@ export class Music {
 
   // ------------------------------------------------------------ voices
 
-  pad(notes, t, dur) {
+  // kind: saw (cold detuned saws), warm (the same, darker), choir (saws
+  // through a vowel formant bank) or glass (sine partials, slow bloom).
+  pad(notes, t, dur, kind = 'saw') {
     const ctx = this.ctx;
+    const glass = kind === 'glass';
+    const dest = kind === 'choir' ? this.choirIn : this.padFilter;
+    const level = glass ? 0.045 : kind === 'choir' ? 0.06 : 0.05;
+    const attack = glass ? Math.min(4, dur * 0.5) : Math.min(1.8, dur * 0.4);
     for (const m of notes) {
       for (const [det, pan] of [
         [-8, -0.55],
         [8, 0.55],
       ]) {
-        const o = ctx.createOscillator();
-        o.type = 'sawtooth';
-        o.frequency.value = midi(m);
-        o.detune.value = det + rand(-3, 3);
-        const p = ctx.createStereoPanner();
-        p.pan.value = pan;
         const g = ctx.createGain();
         g.gain.setValueAtTime(0, t);
-        g.gain.linearRampToValueAtTime(0.05, t + Math.min(1.8, dur * 0.4));
-        g.gain.setValueAtTime(0.05, t + dur);
+        g.gain.linearRampToValueAtTime(level, t + attack);
+        g.gain.setValueAtTime(level, t + dur);
         g.gain.linearRampToValueAtTime(0, t + dur + 2.5);
-        o.connect(g).connect(p).connect(this.padFilter);
-        o.start(t);
-        o.stop(t + dur + 2.6);
+        const p = ctx.createStereoPanner();
+        p.pan.value = pan;
+        g.connect(p).connect(dest);
+        const partials = glass ? [[1, 1, 'sine'], [2, 0.25, 'sine'], [3, 0.08, 'triangle']] : [[1, 1, 'sawtooth']];
+        for (const [mul, amp, type] of partials) {
+          const o = ctx.createOscillator();
+          o.type = type;
+          o.frequency.value = midi(m) * mul;
+          o.detune.value = det * (glass ? 0.6 : 1) + rand(-3, 3);
+          const a = ctx.createGain();
+          a.gain.value = amp;
+          o.connect(a).connect(g);
+          o.start(t);
+          o.stop(t + dur + 2.6);
+        }
       }
     }
+  }
+
+  // Plucked arpeggio note: a bright attack that closes quickly, into the
+  // section filter and the delay. opts: { decay, bright, sine }.
+  pluck(m, t, vel, opts) {
+    const ctx = this.ctx;
+    const f = midi(m);
+    const o = ctx.createOscillator();
+    o.type = opts.sine ? 'triangle' : Math.random() < 0.5 ? 'sawtooth' : 'square';
+    o.frequency.value = f;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.Q.value = 2;
+    lp.frequency.setValueAtTime(Math.min(12000, f * (3 + 10 * opts.bright * vel)), t);
+    lp.frequency.exponentialRampToValueAtTime(Math.max(200, f * 1.1), t + opts.decay * 1.4);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.26 * vel, t + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + opts.decay + 0.12 * vel);
+    const p = ctx.createStereoPanner();
+    p.pan.value = rand(-0.35, 0.35);
+    o.connect(lp).connect(g).connect(p).connect(this.seqFilter);
+    o.start(t);
+    o.stop(t + opts.decay + 0.3);
+  }
+
+  // Glassy FM bell: inharmonic modulator, long ring, lots of space.
+  bell(m, t, vel) {
+    const ctx = this.ctx;
+    const f = midi(m);
+    for (const [det, pan] of [
+      [-3, -0.3],
+      [3, 0.3],
+    ]) {
+      const car = ctx.createOscillator();
+      car.frequency.value = f;
+      car.detune.value = det;
+      const mod = ctx.createOscillator();
+      mod.frequency.value = f * 3.5;
+      const idx = ctx.createGain();
+      idx.gain.setValueAtTime(f * 1.6 * vel, t);
+      idx.gain.exponentialRampToValueAtTime(f * 0.02, t + 2.2);
+      mod.connect(idx).connect(car.frequency);
+      const amp = ctx.createGain();
+      amp.gain.setValueAtTime(0.0001, t);
+      amp.gain.exponentialRampToValueAtTime(0.11 * vel, t + 0.004);
+      amp.gain.exponentialRampToValueAtTime(0.0001, t + 4.5);
+      const p = ctx.createStereoPanner();
+      p.pan.value = pan;
+      car.connect(amp).connect(p).connect(this.leadBus);
+      car.start(t);
+      mod.start(t);
+      car.stop(t + 4.6);
+      mod.stop(t + 4.6);
+    }
+  }
+
+  // High, short sine sparkle from the pentatonic palette.
+  sparkle(t, scale) {
+    const ctx = this.ctx;
+    const o = ctx.createOscillator();
+    o.frequency.value = midi(scale[Math.floor(Math.random() * scale.length)] + (Math.random() < 0.5 ? 24 : 36));
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.022, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + rand(0.4, 1.1));
+    const p = ctx.createStereoPanner();
+    p.pan.value = rand(-0.9, 0.9);
+    o.connect(g).connect(p).connect(this.leadBus);
+    o.start(t);
+    o.stop(t + 1.2);
   }
 
   seqNote(m, t, acc) {
@@ -285,6 +383,59 @@ export class Music {
     o2.stop(t + dur + 1.3);
   }
 
+  // Rolling off-beat bass: a filtered saw with a quick envelope over a sub.
+  rollBass(m, t, len, vel) {
+    const ctx = this.ctx;
+    const f = midi(m);
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.value = f;
+    const sub = ctx.createOscillator();
+    sub.frequency.value = f;
+    const sg = ctx.createGain();
+    sg.gain.value = 0.8;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.Q.value = 3;
+    lp.frequency.setValueAtTime(260 + 900 * vel, t);
+    lp.frequency.exponentialRampToValueAtTime(140, t + len);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.16 * vel, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    o.connect(lp);
+    sub.connect(sg).connect(lp);
+    lp.connect(g).connect(this.bassDuck);
+    o.start(t);
+    sub.start(t);
+    o.stop(t + len + 0.05);
+    sub.stop(t + len + 0.05);
+  }
+
+  // Deep sustained sub note (downtempo / minimal).
+  subNote(m, t, len) {
+    const ctx = this.ctx;
+    const o = ctx.createOscillator();
+    o.frequency.value = midi(m);
+    const o2 = ctx.createOscillator();
+    o2.type = 'triangle';
+    o2.frequency.value = midi(m) * 2;
+    const g2 = ctx.createGain();
+    g2.gain.value = 0.12;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.16, t + 0.008);
+    g.gain.setValueAtTime(0.16, t + Math.max(0.02, len - 0.08));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + len + 0.05);
+    o.connect(g);
+    o2.connect(g2).connect(g);
+    g.connect(this.bassDuck);
+    o.start(t);
+    o2.start(t);
+    o.stop(t + len + 0.1);
+    o2.stop(t + len + 0.1);
+  }
+
   bassPulse(m, t, len) {
     const ctx = this.ctx;
     const o = ctx.createOscillator();
@@ -311,7 +462,7 @@ export class Music {
     o2.stop(t + len + 0.05);
   }
 
-  kick(t) {
+  kick(t, v = 1) {
     const ctx = this.ctx;
     const o = ctx.createOscillator();
     o.frequency.setValueAtTime(92, t);
@@ -321,7 +472,7 @@ export class Music {
     lp.frequency.value = 180;
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.28, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.28 * v, t + 0.004);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
     o.connect(lp).connect(g).connect(this.drumBus);
     o.start(t);
@@ -350,6 +501,75 @@ export class Music {
 
   hat(t, v) {
     this.noiseHit(t, this.drumBus, 'highpass', 8200, 0.9, 0.04 * v, 0.03 + 0.02 * v);
+  }
+
+  openHat(t, v) {
+    this.noiseHit(t, this.drumBus, 'highpass', 7000, 0.7, 0.03 * v, 0.28);
+  }
+
+  // Snare: a bandpassed noise burst over a short falling tone, with room.
+  snare(t, v) {
+    const ctx = this.ctx;
+    this.noiseHit(t, this.clapBus, 'bandpass', 1900, 0.7, 0.11 * v, 0.2, 0);
+    this.noiseHit(t, this.drumBus, 'highpass', 5000, 0.7, 0.03 * v, 0.09, 0);
+    const o = ctx.createOscillator();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(210, t);
+    o.frequency.exponentialRampToValueAtTime(150, t + 0.08);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.12 * v, t + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    o.connect(g).connect(this.drumBus);
+    o.start(t);
+    o.stop(t + 0.15);
+  }
+
+  // Rim shot / wood click.
+  rim(t, v) {
+    const ctx = this.ctx;
+    for (const [type, f, d, l] of [['square', 1750, 0.02, 0.03], ['triangle', 420, 0.035, 0.05]]) {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.value = f;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(l * v, t + 0.001);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      o.connect(g).connect(this.tickBus);
+      o.start(t);
+      o.stop(t + d + 0.02);
+    }
+  }
+
+  // Glitch: the note retriggered in accelerating 32nds, panning about.
+  stutter(t, m, dur) {
+    const n = Math.random() < 0.5 ? 6 : 8;
+    let at = t;
+    for (let i = 0; i < n; i++) {
+      this.pluck(m + (Math.random() < 0.2 ? 12 : 0), at, 0.8 - i * 0.07, { decay: 0.06, bright: 0.9 });
+      if (Math.random() < 0.5) this.noiseHit(at, this.tickBus, 'bandpass', rand(3000, 7000), 4, 0.02, 0.02, rand(-0.8, 0.8));
+      at += (dur / n) * (1 - i * 0.05);
+    }
+  }
+
+  // Reverse-cymbal swell into the next section.
+  swell(t, dur) {
+    const ctx = this.ctx;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.loop = true;
+    const f = ctx.createBiquadFilter();
+    f.type = 'highpass';
+    f.frequency.setValueAtTime(6000, t);
+    f.frequency.exponentialRampToValueAtTime(2200, t + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.05, t + dur * 0.98);
+    g.gain.linearRampToValueAtTime(0, t + dur);
+    src.connect(f).connect(g).connect(this.fxBus);
+    src.start(t);
+    src.stop(t + dur + 0.05);
   }
 
   clap(t) {
@@ -391,13 +611,13 @@ export class Music {
     src.stop(t + dur + 0.05);
   }
 
-  pump(t) {
+  pump(t, v = 1) {
     for (const [g, depth] of [
       [this.padDuck, 0.5],
       [this.seqDuck, 0.45],
       [this.bassDuck, 0.35],
     ]) {
-      g.gain.setValueAtTime(depth, t);
+      g.gain.setValueAtTime(1 - (1 - depth) * Math.min(1, v), t);
       g.gain.setTargetAtTime(1, t + 0.03, 0.09);
     }
   }
@@ -405,16 +625,20 @@ export class Music {
   // ------------------------------------------------------------ sequencer
 
   startSong(t, skipIntro = false) {
-    this.song = composeSong();
+    const song = composeSong(undefined, this.forceStyle || null);
+    this.song = song;
     this.sec = skipIntro ? 1 : 0;
     this.secBar = 0;
     this.songBar = 0;
     this.stepInBar = 0;
-    this.stepDur = 60 / this.song.bpm / 4;
-    const dt = (60 / this.song.bpm) * 0.75;
+    this.stepDur = 60 / song.bpm / 4;
+    const dt = (60 / song.bpm) * song.delay;
     this.dl.delayTime.setTargetAtTime(dt, t, 0.5);
     this.dr.delayTime.setTargetAtTime(dt, t, 0.5);
-    this.onSong(this.song);
+    // Per-style voicing of the shared rig.
+    this.seqFilter.Q.setTargetAtTime(song.arpKind === 'seq' ? 5 : 1.4, t, 0.5);
+    this.padFilter.Q.setTargetAtTime(song.padKind === 'warm' ? 0.9 : 0.5, t, 0.5);
+    this.onSong(song);
   }
 
   step(t) {
@@ -422,32 +646,48 @@ export class Music {
     const sec = song.sections[this.sec];
     const s = this.stepInBar;
     const barDur = 16 * this.stepDur;
-    const chord = song.chords[Math.floor(this.songBar / song.barsPerChord) % song.chords.length];
+    const prog = sec.part === 'B' ? song.chordsB : song.chords;
+    const chord = prog[Math.floor(this.songBar / song.barsPerChord) % prog.length];
+    // Swing pushes the off-beat sixteenths late.
+    const ts = s % 2 === 1 ? t + song.swing * this.stepDur : t;
 
     // Section start: sweep the sequence filter and set levels.
     if (s === 0 && this.secBar === 0) {
-      const [lvl, from, to] = sec.seq;
+      const [from, to] = sec.arpCut;
       const f = this.seqFilter.frequency;
       f.cancelScheduledValues(t);
       f.setValueAtTime(from, t);
       f.exponentialRampToValueAtTime(to, t + sec.bars * barDur);
-      this.seqLevel.gain.setTargetAtTime(lvl, t, 0.8);
-      this.padFilter.frequency.setTargetAtTime(sec.kick ? 1300 : 800, t, 2);
+      this.seqLevel.gain.setTargetAtTime(sec.arp || 0.0001, t, 0.8);
+      const padCut = { saw: 1, choir: 1.1, warm: 0.65, glass: 2.2 }[song.padKind] * (sec.drums ? 1300 : 800);
+      this.padFilter.frequency.setTargetAtTime(padCut, t, 2);
     }
 
     // Chord change.
     if (s === 0 && this.songBar % song.barsPerChord === 0) {
       const dur = song.barsPerChord * barDur;
-      this.pad(chord.pad, t, dur);
+      if (sec.pad) this.pad(chord.pad, t, dur, song.padKind);
       if (sec.bass === 'drone') this.bassDrone(song.pedal ? song.tonicBass : chord.root, t, dur);
       this.texFilter.frequency.setTargetAtTime(rand(600, 2600), t, dur * 0.3);
     }
 
-    const bassNote = song.pedal ? song.tonicBass : chord.root;
+    // Bass.
+    const bassNote = song.pedal && sec.bass === 'pulse' ? song.tonicBass : chord.root;
     if (sec.bass === 'pulse' && s % 2 === 0 && s % 4 !== 0) this.bassPulse(bassNote, t, this.stepDur * 1.6);
+    else if (sec.bass === 'roll' && song.roll[s]) this.rollBass(chord.root + song.roll[s].iv, ts, this.stepDur * 0.85, song.roll[s].vel);
+    else if (sec.bass === 'sub' && song.sub[s]) this.subNote(chord.root, ts, song.sub[s] * this.stepDur);
 
-    const p = song.seqPattern[s];
-    if (p) this.seqNote(chord.seq[p.idx], t, p.acc);
+    // Sequence / arpeggio.
+    if (sec.arp > 0) {
+      if (song.arpKind === 'seq') {
+        const p = song.seqPattern[s];
+        if (p) this.seqNote(chord.seq[p.idx], t, p.acc);
+      } else if (!song.arp.eighths || s % 2 === 0) {
+        const g = this.songBar * 16 + s;
+        const p = song.arp.pattern[(song.arp.eighths ? g / 2 : g) % song.arp.loop];
+        if (p) this.pluck(chord.seq[p.idx] + p.up, ts, p.acc, song.arp);
+      }
+    }
 
     // Keys motif: repeats every two bars with small, random changes.
     if (sec.keys) {
@@ -461,21 +701,41 @@ export class Music {
           if (k === song.motif.length - 1 && cycle % 2 === 1) idx += Math.random() < 0.5 ? 1 : -1;
           idx = Math.max(0, Math.min(song.keysScale.length - 1, idx));
           const up = sec.keysUp && cycle % 2 === 1 ? 12 : 0;
-          this.keys(song.keysScale[idx] + up, t, n.vel * rand(0.85, 1));
+          this.keys(song.keysScale[idx] + up, ts, n.vel * rand(0.85, 1));
         });
       }
     }
+    // Electric-piano chord stabs.
+    if (sec.comp && song.compSteps.includes(s) && (s < 8 || this.secBar % 2 === 1)) {
+      for (const m of chord.pad) this.keys(m, ts + rand(0, 0.012), 0.34 * rand(0.8, 1));
+    }
+    // Slow bell melody.
+    if (sec.lead) {
+      const pos = (this.secBar % song.lead.bars) * 16 + s;
+      for (const n of song.lead.notes) if (n.pos === pos) this.bell(song.keysScale[n.idx] + 12, t, n.vel);
+    }
 
     // Drums.
-    const kicks = sec.kick ? song.kicks[sec.kick] : null;
-    if (kicks?.includes(s)) {
-      this.kick(t);
-      this.pump(t);
+    const kit = sec.drums ? song.drums[sec.drums] : null;
+    if (kit) {
+      if (kit.kick[s]) {
+        this.kick(t, kit.kick[s]);
+        this.pump(t, kit.kick[s]);
+      }
+      if (sec.snare && kit.snare?.[s]) this.snare(ts, kit.snare[s]);
+      if (sec.hats > 0 && kit.open?.[s]) this.openHat(ts, kit.open[s] * sec.hats);
+      if (kit.rim?.[s]) this.rim(ts, kit.rim[s]);
     }
-    if (sec.hats > 0 && song.hats[s] > 0) this.hat(t, song.hats[s] * sec.hats);
+    if (sec.hats > 0 && song.hats[s] > 0) this.hat(ts, song.hats[s] * sec.hats);
     if (sec.clap && (s === 4 || s === 12)) this.clap(t);
     if (sec.ticks && Math.random() < 0.05) this.tick(t + rand(0, this.stepDur));
+    if (sec.shimmer && Math.random() < sec.shimmer) this.sparkle(t + rand(0, this.stepDur), song.keysScale);
+
+    // Phrase ends: risers, reverse swells, glitchy stutters.
     if (sec.riser && s === 0 && this.secBar === sec.bars - 2) this.riser(t, 2 * barDur);
+    if (sec.swell && s === 0 && this.secBar === sec.bars - 2) this.swell(t, 2 * barDur);
+    if (s === 0) this.glitchBar = sec.glitch > 0 && this.secBar % 4 === 3 && Math.random() < sec.glitch;
+    if (this.glitchBar && s === 12) this.stutter(t, chord.seq[Math.floor(Math.random() * 3)], 4 * this.stepDur);
 
     // Advance.
     this.stepInBar++;

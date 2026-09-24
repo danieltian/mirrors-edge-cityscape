@@ -106,10 +106,12 @@ export function escalator(b, x0, y0, z, dir, rise, run, land, keys = {}) {
   const L = run + 2 * land;
   // Truss body: side profile extruded across the width.
   const sh = new THREE.Shape();
-  sh.moveTo(0, 0);
-  sh.lineTo(land, 0);
-  sh.lineTo(land + run, rise);
-  sh.lineTo(L, rise);
+  // Landings stand a little proud of the floor so they never share its plane.
+  const lip = 0.012;
+  sh.moveTo(0, lip);
+  sh.lineTo(land, lip);
+  sh.lineTo(land + run, rise + lip);
+  sh.lineTo(L, rise + lip);
   sh.lineTo(L, rise - 1.1);
   sh.lineTo(land + run + 0.5, rise - 1.1);
   sh.lineTo(land + 0.5, -1.1);
@@ -128,8 +130,8 @@ export function escalator(b, x0, y0, z, dir, rise, run, land, keys = {}) {
     f.box('stepEdge', -0.5, (i + 1) * sr + 0.02, land + i * sd, 0.5, (i + 1) * sr + 0.03, land + i * sd + 0.04);
   }
   for (const s of [-1, 1]) f.geo('blackGloss', UBOX, s * 0.53, rise / 2 + 0.1, land + run / 2, 0, 0.06, 0.22, Math.hypot(run, rise), -Math.atan2(rise, run));
-  f.box('metal', -0.55, 0, 0, 0.55, 0.03, land);
-  f.box('metal', -0.55, rise, land + run, 0.55, rise + 0.03, L);
+  f.box('metal', -0.55, 0, 0.01, 0.55, 0.03, land);
+  f.box('metal', -0.55, rise, land + run, 0.55, rise + 0.03, L - 0.01);
   // Balustrades with handrails, sloped between the landings.
   const ang = Math.atan2(rise, run);
   const slope = Math.hypot(run, rise);

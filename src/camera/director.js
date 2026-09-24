@@ -42,7 +42,7 @@ export class Director {
     this.shotDuration = 0;
     this.transition = null;
     this.fogEye = new THREE.Vector3();
-    this.tour = { on: false, t: 0, interval: 30 };
+    this.cut = { t: 0, interval: 8 }; // drift moves on to a new view this often (seconds)
     this.autoResume = 0; // seconds of idle before drift resumes (0 = never)
     this.idle = 0;
     this.keys = new Set();
@@ -57,7 +57,6 @@ export class Director {
       if (['w', 'a', 's', 'd', 'q', 'e', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) {
         this.keys.add(k);
         this.idle = 0;
-        if (this.mode === 'drift' && !['shift', 'q', 'e'].includes(k)) this.setMode('explore');
         if (this.projection === 'iso' && (k === 'q' || k === 'e')) this.rotateIso(k === 'q' ? -1 : 1);
       }
     };
@@ -93,6 +92,8 @@ export class Director {
     if (mode === this.mode || this.transition?.type === 'morph') return;
     this.mode = mode;
     this.idle = 0;
+    this.cut.t = 0;
+    if (this.controls) this.controls.enabled = mode === 'explore';
     if (mode === 'drift') {
       if (this.projection === 'persp') {
         const d = this.world.driftFrom(this.persp, this.controls ? this.controls.target.clone() : this.rig.target.clone());
@@ -116,10 +117,10 @@ export class Director {
     this.setMode(this.mode === 'drift' ? 'explore' : 'drift');
   }
 
-  // auto = triggered by drift/tour rather than the user.
+  // auto = triggered by drift rather than the user.
   randomLocation(auto = false) {
     if (!this.planner || this.transition?.type === 'morph') return;
-    this.tour.t = 0;
+    this.cut.t = 0;
     this.shotTime = 0;
     if (auto && this.onNewWorld && this.world.wantsNewWorld()) {
       this.onNewWorld();
@@ -139,12 +140,6 @@ export class Director {
     if (this.projection === 'persp') this.morphToIso();
     else if (this.world.kind !== 'city') this.cutToPersp();
     else this.morphToPersp();
-  }
-
-  setTour(on) {
-    this.tour.on = on;
-    this.tour.t = 0;
-    this.onChange();
   }
 
   resize(w, h) {
@@ -240,10 +235,10 @@ export class Director {
       c.screenSpacePanning = !!ex.screenSpacePanning;
       c.target.copy(this.world ? this.world.exploreTarget(this.persp, this.rig.target) : this.rig.target);
     }
-    c.addEventListener('start', () => {
-      this.idle = 0;
-      if (this.mode === 'drift' && !this.transition) this.setMode('explore');
-    });
+    // The mouse only steers in Explore; switching modes is always explicit
+    // (Space or the dock), so clicking to start the music never changes it.
+    c.enabled = this.mode === 'explore';
+    c.addEventListener('start', () => (this.idle = 0));
     this.controls = c;
   }
 
@@ -507,13 +502,14 @@ export class Director {
     if (this.mode === 'explore') {
       this.idle += dt;
       if (this.autoResume > 0 && this.idle > this.autoResume && !this.transition) this.setMode('drift');
-    } else if (!this.transition) {
-      this.shotTime += dt;
-      if (this.projection === 'persp' && this.shotDuration && this.shotTime > this.shotDuration) this.randomLocation(true);
-    }
-    if (this.tour.on && this.mode === 'drift' && !this.transition) {
-      this.tour.t += dt;
-      if (this.tour.t > this.tour.interval) this.randomLocation(true);
+    } else {
+      // Drift always tours: cut to a new view every few seconds (counted
+      // from the previous cut, fade included), or sooner when a shot runs out.
+      this.cut.t += dt;
+      if (!this.transition) {
+        this.shotTime += dt;
+        if (this.cut.t > this.cut.interval || (this.projection === 'persp' && this.shotDuration && this.shotTime > this.shotDuration)) this.randomLocation(true);
+      }
     }
   }
 

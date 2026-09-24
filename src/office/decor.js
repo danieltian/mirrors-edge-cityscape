@@ -259,7 +259,11 @@ class Decor {
   }
 
   rug(r, x0, z0, x1, z1) {
-    this.b.box(this.rng.chance(0.7) ? 'carpet' : 'carpetGray', x0, r.y, z0, x1, r.y + 0.022, z1, false);
+    // Keep clear of the skirting all round.
+    const m = T / 2 + 0.04;
+    [x0, z0, x1, z1] = [Math.max(x0, r.x0 + m), Math.max(z0, r.z0 + m), Math.min(x1, r.x1 - m), Math.min(z1, r.z1 - m)];
+    if (x1 - x0 < 0.8 || z1 - z0 < 0.8) return;
+    this.b.box(this.rng.chance(0.7) ? 'carpet' : 'carpetGray', x0, r.y, z0, x1, r.y + 0.017, z1, false);
   }
 
   // Sofa group: a sofa (or two facing) with a coffee table, armchairs opposite.

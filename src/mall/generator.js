@@ -4,6 +4,9 @@ import { Builder } from '../office/builder.js';
 import * as F from '../office/furniture.js';
 import * as M from './props.js';
 import { makeMallPlan, inPoly, FH, SOFFIT, RUN, LAND } from './plan.js';
+import { planSkyline } from '../render/skyline.js';
+import { Region } from './region.js';
+import { pickExterior, buildExterior } from './exterior.js';
 
 // Procedural shopping mall in the style of Mirror's Edge's New Eden Mall:
 // a tall void ringed by galleries with orange-and-black fascias, black
@@ -64,43 +67,19 @@ export function mallName(rng) {
 
 const snap = (v, s = 0.6) => Math.round(v / s) * s;
 
-// Free-space bookkeeping inside an arbitrary walkable region.
-class Region {
-  constructor(test, bounds) {
-    this.test = test;
-    this.bounds = bounds;
-    this.used = [];
-  }
-  reserve(x0, z0, x1, z1) {
-    this.used.push([Math.min(x0, x1), Math.min(z0, z1), Math.max(x0, x1), Math.max(z0, z1)]);
-  }
-  free(x0, z0, x1, z1, pad = 0.4) {
-    for (const [x, z] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1], [(x0 + x1) / 2, (z0 + z1) / 2]]) if (!this.test(x, z)) return false;
-    for (const u of this.used) if (x0 < u[2] + pad && x1 > u[0] - pad && z0 < u[3] + pad && z1 > u[1] - pad) return false;
-    return true;
-  }
-  take(x0, z0, x1, z1, pad) {
-    if (!this.free(x0, z0, x1, z1, pad)) return false;
-    this.reserve(x0, z0, x1, z1);
-    return true;
-  }
-  spot(rng, w, d, tries = 40, pad) {
-    const r = this.bounds;
-    for (let i = 0; i < tries; i++) {
-      const x = rng.range(r.x0 + w / 2, r.x1 - w / 2);
-      const z = rng.range(r.z0 + d / 2, r.z1 - d / 2);
-      if (this.take(x - w / 2, z - d / 2, x + w / 2, z + d / 2, pad)) return { x, z };
-    }
-    return null;
-  }
-}
-
 export function generateMall(seed) {
   const rng = new RNG(seed);
   const pal = rng.weighted(MALL_PALETTES.map((p) => [p, p.w]));
   const mall = mallName(rng);
   const plan = makeMallPlan(rng);
   const style = pickStyle(rng);
+  // The outside gets its own stream so its choices don't reshuffle the inside.
+  const xr = new RNG((seed ^ 0x2c1b3c6d) >>> 0);
+  style.exterior = pickExterior(xr);
+  {
+    const q = style.exterior.plaza;
+    plan.plaza = { x0: plan.B.x0 - q.west, x1: plan.B.x1 + q.east, z0: plan.B.z1, z1: plan.B.z1 + snap(q.depth) };
+  }
   const { levels, HA, B, V, G, voids, flights, bridges, lift, entrance: E, units, plaza } = plan;
   const b = new Builder();
   const ceilY = (L) => (L + 1) * FH - SOFFIT;
@@ -287,7 +266,8 @@ export function generateMall(seed) {
   if (!lift.none) {
     const { x0, x1, z0, z1 } = lift;
     for (const [px, pz] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) b.box('darkMetal', px - 0.08, 0, pz - 0.08, px + 0.08, HA + 0.6, pz + 0.08, false);
-    const gz = lift.side === 'N' ? z0 : z1; // gallery-facing side
+    // Gallery-facing side, set just inside the shaft so it clears the fascia.
+    const gz = lift.side === 'N' ? z0 + 0.1 : z1 - 0.1;
     const oz = lift.side === 'N' ? z1 : z0;
     b.box('glass', x0, 0, oz - 0.02, x1, HA, oz + 0.02, false);
     b.box('glass', x0 - 0.02, 0, z0, x0 + 0.02, HA, z1, false);
@@ -338,8 +318,8 @@ export function generateMall(seed) {
     const oa0 = u.a0 + pw;
     const oa1 = u.a1 - pw;
     const top = 3.3;
-    b.wallBox('white', axis, c, oa0, oa1, y0 + top, y0 + ceil, ...o(-0.15, 0.2), true);
-    b.wallBox('blackGloss', axis, c, oa0, oa1, y0 + top - 0.04, y0 + top, ...o(-0.15, 0.22));
+    b.wallBox('white', axis, c, oa0, oa1, y0 + top, y0 + ceil, ...o(-0.14, 0.2), true);
+    b.wallBox('blackGloss', axis, c, oa0, oa1, y0 + top - 0.04, y0 + top, ...o(-0.13, 0.22));
     // Brand sign.
     if (u.kind !== 'blank') {
       const sw = Math.min(oa1 - oa0 - 0.6, 4.4);
@@ -356,7 +336,7 @@ export function generateMall(seed) {
       b.wallBox('shutter', axis, c, oa0, oa1, y0, y0 + top, -0.03, 0.03, true);
       b.wallBox('white', axis, c, oa0, oa1, y0 + top - 0.3, y0 + top, ...o(0.03, 0.18));
       b.wallBox('metal', axis, c, oa0, oa1, y0, y0 + 0.08, ...o(0.02, 0.06));
-      for (const a of [oa0, oa1 - 0.08]) b.wallBox('metal', axis, c, a, a + 0.08, y0, y0 + top, ...o(-0.03, 0.08));
+      for (const a of [oa0, oa1 - 0.08]) b.wallBox('metal', axis, c, a, a + 0.08, y0, y0 + top, ...o(-0.045, 0.08));
       if (rng.chance(0.3)) {
         // A shutter left half open.
         const h = rng.range(0.4, 1.1);
@@ -456,200 +436,9 @@ export function generateMall(seed) {
     addFocus(tx, y0 + 1.2, tz, 0.6, 'shop');
   }
 
-  // ------------------------------------------------------ outer walls
-  const wallH = HA + 1.2;
-  const facadeWall = (axis, c, a0, a1, outward, openings = []) => {
-    const ops = [...openings].sort((p, q) => p[0] - q[0]);
-    let cur = a0;
-    const pieces = [];
-    for (const [o0, o1, oh] of ops) {
-      if (o0 > cur) pieces.push([cur, o0, 0]);
-      pieces.push([o0, o1, oh]);
-      cur = o1;
-    }
-    if (cur < a1) pieces.push([cur, a1, 0]);
-    for (const [p0, p1, oh] of pieces) {
-      b.wallBox('wall', axis, c, p0, p1, oh, wallH, -0.15, 0.15, true);
-      b.wallBox('stone', axis, c, p0, p1, oh, wallH, ...(outward > 0 ? [0.15, 0.2] : [-0.2, -0.15]));
-    }
-    for (let L = 1; L <= levels; L++) b.wallBox('stoneBand', axis, c, a0, a1, L * FH - 0.35, L * FH + 0.15, ...(outward > 0 ? [0.2, 0.32] : [-0.32, -0.2]));
-    b.wallBox('stoneBand', axis, c, a0, a1, wallH - 0.3, wallH, ...(outward > 0 ? [0.2, 0.34] : [-0.34, -0.2]));
-  };
-  facadeWall('x', B.z0, B.x0, B.x1, -1);
-  facadeWall('x', B.z1, B.x0, B.x1, 1, [[E.x0, E.x1, 3.4]]);
-  facadeWall('z', B.x0, B.z0, B.z1, -1);
-  facadeWall('z', B.x1, B.z0, B.z1, 1);
-
-  // ----------------------------------------------------------- entrance
-  // Doors at the facade: the middle pair stands open.
-  {
-    const n = Math.max(4, Math.round((E.x1 - E.x0) / 1.8));
-    const dw = (E.x1 - E.x0) / n;
-    const z = B.z1;
-    for (let i = 0; i < n; i++) {
-      const a = E.x0 + i * dw;
-      b.box('darkMetal', a - 0.04, 0, z - 0.06, a + 0.04, 3.4, z + 0.06, false);
-      const open = Math.abs(i + 0.5 - n / 2) < 1.1;
-      if (!open) {
-        b.box('glass', a, 0, z - 0.015, a + dw, 3.3, z + 0.015, false);
-        b.collider(a, 0, z - 0.05, a + dw, 3.4, z + 0.05, { glass: true });
-        b.box('metal', a + dw / 2 - 0.02, 0.9, z - 0.08, a + dw / 2 + 0.02, 1.6, z + 0.08, false);
-      }
-    }
-    b.box('darkMetal', E.x0, 3.3, z - 0.08, E.x1, 3.45, z + 0.08, false);
-  }
-  // Glazed entrance box with a lattice of diagonal struts, the mall's name above.
-  const VB = { x0: E.x0 - 1.2, x1: E.x1 + 1.2, z0: B.z1 + 0.2, z1: B.z1 + E.depth, h: Math.min(HA, 2 * FH + 1.6) };
-  {
-    const { x0, x1, z0, z1, h } = VB;
-    b.box('white', x0 - 0.3, h, z0, x1 + 0.3, h + 0.5, z1 + 0.3);
-    b.box('white', x0 - 0.3, h - 2.0, z1, x1 + 0.3, h + 0.5, z1 + 0.3);
-    const signH = Math.min(1.4, ((x1 - x0) * 0.9) / 8);
-    const sf = b.frame((x0 + x1) / 2, h - 1.0 - signH / 2, z1 + 0.305, 0);
-    sf.geo('mallSign', new THREE.PlaneGeometry(1, 1), 0, 0, 0, 0, signH * 8, signH, 1);
-    // Front glazing and struts.
-    const gh = h - 2.0;
-    b.box('glass', x0, 0, z1 - 0.02, x1, gh, z1 + 0.02, false);
-    b.collider(x0, 0, z1 - 0.05, (x0 + x1) / 2 - 1.6, gh, z1 + 0.05, { glass: true });
-    b.collider((x0 + x1) / 2 + 1.6, 0, z1 - 0.05, x1, gh, z1 + 0.05, { glass: true });
-    const s = 2.4;
-    const node = (x, y) => new THREE.Vector3(x, y, z1 - 0.12);
-    for (let k = -Math.ceil(gh / s); k <= Math.ceil((x1 - x0) / s) + 1; k++) {
-      for (const sg of [1, -1]) {
-        // Line x = x0 + k*s + sg*y, clipped to the rectangle.
-        const pts = [];
-        for (const y of [0, gh]) {
-          const x = x0 + k * s + sg * y;
-          if (x >= x0 - 1e-6 && x <= x1 + 1e-6) pts.push(node(x, y));
-        }
-        for (const x of [x0, x1]) {
-          const y = (x - x0 - k * s) * sg;
-          if (y > 0 && y < gh) pts.push(node(x, y));
-        }
-        if (pts.length >= 2) b.between('frame', new THREE.CylinderGeometry(1, 1, 1, 6), pts[0], pts[1], 0.07);
-      }
-    }
-    for (const x of [x0, x1]) b.box('white', x - 0.15, 0, z1 - 0.2, x + 0.15, gh, z1);
-    b.box('white', x0, gh - 0.3, z1 - 0.25, x1, gh, z1);
-    b.box('white', x0, 3.4, z1 - 0.2, x1, 3.6, z1);
-    // Sides.
-    for (const x of [x0, x1]) {
-      b.box('glass', x - 0.02, 0, z0, x + 0.02, gh, z1, false);
-      b.collider(x - 0.05, 0, z0, x + 0.05, gh, z1, { glass: true });
-      for (let z = z0; z <= z1; z += (z1 - z0) / 2) b.box('darkMetal', x - 0.05, 0, z - 0.05, x + 0.05, gh, z + 0.05, false);
-    }
-    // Accent wall behind the glass with the mall mark.
-    b.box('wallAccent', E.x0 - 1.1, 3.6, B.z1 + 0.2, E.x1 + 1.1, h, B.z1 + 0.25, false);
-    const mf = b.frame((x0 + x1) / 2, 3.8 + (gh - 3.8) / 2, B.z1 + 0.26, 0);
-    const ms = Math.min(gh - 4.2, 6);
-    mf.geo('mallMark', new THREE.PlaneGeometry(1, 1), 0, 0, 0, 0, ms, ms, 1);
-    addFocus((x0 + x1) / 2, h * 0.5, z1, 2, 'entrance');
-  }
-
-  // ------------------------------------------------------------- plaza
-  b.box('paving', plaza.x0, -0.3, plaza.z0, plaza.x1, 0, plaza.z1);
-  b.box('ground', plaza.x0 - 400, -0.5, plaza.z0 - 400, plaza.x1 + 400, -0.3, plaza.z1 + 400, false);
-  // Kerb and a strip of road beyond the plaza.
-  b.box('concrete', plaza.x0, 0, plaza.z1 - 0.3, plaza.x1, 0.15, plaza.z1, false);
-  b.box('asphalt', plaza.x0 - 400, -0.29, plaza.z1, plaza.x1 + 400, -0.28, plaza.z1 + 14, false);
-
-  // Buildings framing the plaza, with a colonnade at street level.
-  const sideBlocks = [];
-  for (const sgn of [-1, 1]) {
-    const x0 = sgn < 0 ? plaza.x0 - 16 : plaza.x1;
-    const x1 = sgn < 0 ? plaza.x0 : plaza.x1 + 16;
-    const z0 = plaza.z0 - 8;
-    const z1 = plaza.z1 - 2;
-    const h = rng.range(14, 22);
-    const face = sgn < 0 ? x1 : x0; // facing the plaza
-    const inner = sgn < 0 ? x1 - 4 : x0 + 4;
-    const [m0, m1] = sgn < 0 ? [x0, inner] : [inner, x1];
-    b.box('stone', m0, 0, z0, m1, 4.4, z1, false);
-    b.box('facade', x0, 4.4, z0, x1, h, z1, false);
-    const [s0, s1] = sgn < 0 ? [inner, x1 + 0.15] : [x0 - 0.15, inner];
-    b.box('concrete', s0, 4.2, z0, s1, 4.8, z1, false);
-    for (let z = z0 + 3; z < z1 - 2; z += 6) F.column(b, (face + inner) / 2, z, 0, 4.2, 0.35, 'mosaicBlue');
-    // Shop windows with blue screens under the colonnade.
-    for (let z = z0 + 2; z < z1 - 3; z += 4) {
-      const sx = inner - sgn * 0.06;
-      b.box('shopDark', sx - 0.02, 0.2, z, sx + 0.02, 3.6, z + 3.2, false);
-      if (rng.chance(0.6)) b.box('blueScreen', sx - sgn * 0.03 - 0.01, 1.2, z + 1.0, sx - sgn * 0.03 + 0.01, 2.6, z + 2.1, false);
-    }
-    b.collider(m0, 0, z0, m1, 4.2, z1);
-    b.collider(x0, 4.2, z0, x1, h, z1);
-    // Billboards on the upper wall.
-    const bx = face - sgn * 0.02;
-    const rot = sgn < 0 ? Math.PI / 2 : -Math.PI / 2;
-    for (let k = 0; k < 2; k++) {
-      const z = z0 + (z1 - z0) * (0.3 + 0.4 * k);
-      M.billboard(b, bx, 5.4, z, rot, 7, 2.6, `plazaAd${k % 2}`, 'white');
-    }
-    sideBlocks.push({ x0: Math.min(x0, x1), x1: Math.max(x0, x1), z0, z1 });
-  }
-  // Giant banners on the mall facade either side of the entrance box.
-  for (const sgn of [-1, 1]) {
-    const x = sgn < 0 ? (B.x0 + VB.x0) / 2 : (VB.x1 + B.x1) / 2;
-    M.billboard(b, x, FH + 0.6, B.z1 + 0.34, 0, 9, 3.4, `plazaAd${sgn < 0 ? 0 : 1}`, 'white');
-  }
-
-  // ----------------------------------------------------------- decor
-  const Lplaza = new Region((x, z) => x > plaza.x0 + 1 && x < plaza.x1 - 1 && z > VB.z1 + 2 && z < plaza.z1 - 1.5 && !sideBlocks.some((s) => x > s.x0 - 1 && x < s.x1 + 1 && z > s.z0 && z < s.z1), { x0: plaza.x0, x1: plaza.x1, z0: VB.z1, z1: plaza.z1 });
-  // Keep an approach to the entrance clear.
-  Lplaza.reserve((VB.x0 + VB.x1) / 2 - 3, VB.z1, (VB.x0 + VB.x1) / 2 + 3, plaza.z1);
-  for (let i = 0; i < rng.int(2, 3); i++) {
-    const w = rng.range(4.8, 7.2);
-    const s = Lplaza.spot(rng, w + 1.6, w + 1.6, 40, 1);
-    if (!s) continue;
-    M.planterBox(b, s.x, 0, s.z, w, w, 0.6, 'concrete');
-    M.whiteTree(b, rng, s.x, 0.6, s.z, rng.range(6, 8));
-    for (let k = 0; k < 3; k++) M.fronds(b, rng, s.x + rng.range(-w / 3, w / 3), 0.6, s.z + rng.range(-w / 3, w / 3), rng.range(0.9, 1.4));
-    for (const [dx, dz, rot] of [[0, w / 2 + 0.45, 0], [0, -w / 2 - 0.45, Math.PI]]) M.slatBench(b, s.x + dx, 0, s.z + dz, rot, w * 0.7, 'wood');
-    addFocus(s.x, 2.5, s.z, 1, 'plaza');
-  }
-  for (let i = 0; i < rng.int(2, 4); i++) {
-    const s = Lplaza.spot(rng, 3.2, 3.2, 40, 0.8);
-    if (!s) continue;
-    M.planterBox(b, s.x, 0, s.z, 2, 2, 0.75, 'mosaicBlue');
-    M.fronds(b, rng, s.x, 0.75, s.z, rng.range(0.7, 1.1));
-    M.slatBench(b, s.x + 1.8, 0, s.z, -Math.PI / 2, 1.8, 'wood');
-    M.bin(b, s.x - 1.5, 0, s.z + 1.2, 0);
-  }
-  {
-    const s = Lplaza.spot(rng, 2.4, 2.4, 30, 1);
-    if (s) {
-      const f = b.frame(s.x, 0, s.z, rng.range(0, Math.PI));
-      f.box('concrete', -1.2, 0, -0.6, 1.2, 0.4, 0.6, true);
-      f.geo('stone', new THREE.BoxGeometry(1.4, 4, 0.5), 0, 2.2, 0, 0, 1, 1, 1, 0.12, 0.08);
-      b.collider(s.x - 0.8, 0, s.z - 0.8, s.x + 0.8, 4.2, s.z + 0.8);
-      addFocus(s.x, 2, s.z, 0.6, 'plaza');
-    }
-  }
-  if (style.plaza.fountain) {
-    const s = Lplaza.spot(rng, 8, 8, 30, 1);
-    if (s) {
-      M.fountain(b, rng, s.x, 0, s.z, rng.range(2.6, 3.6));
-      addFocus(s.x, 1.2, s.z, 1, 'plaza');
-    }
-  }
-  if (style.plaza.cafe) {
-    const s = Lplaza.spot(rng, 10, 7, 30, 1);
-    if (s) {
-      for (const [dx, dz] of [[-3.2, -1.8], [0, -1.8], [3.2, -1.8], [-3.2, 1.8], [0, 1.8], [3.2, 1.8]]) {
-        if (rng.chance(0.2)) continue;
-        F.cafeTable(b, s.x + dx, 0, s.z + dz, 'whiteGloss');
-        for (let k = 0; k < 3; k++) {
-          const a = (k / 3) * Math.PI * 2;
-          F.simpleChair(b, s.x + dx + Math.sin(a) * 0.72, 0, s.z + dz + Math.cos(a) * 0.72, a + Math.PI, 'whiteGloss');
-        }
-        M.umbrella(b, s.x + dx, 0, s.z + dz, 1.4, rng.chance(0.5) ? 'canvas' : 'canvasWhite');
-      }
-      addFocus(s.x, 1.5, s.z, 1, 'plaza');
-    }
-  }
-  for (let x = B.x0 + 4; x < B.x1 - 3; x += rng.range(6, 8)) {
-    if (x > VB.x0 - 2 && x < VB.x1 + 2) continue;
-    M.bannerPole(b, x, 0, B.z1 + 2.6, 7.5, 'plazaBanner', 0);
-  }
+  // ------------------------------------------------ outside: walls, entrance, plaza
+  const ext = buildExterior({ b, rng: xr, plan, style, addFocus, snap });
+  const VB = ext.VB;
 
   // The court: rug and sofas, sculpture, planters with white trees, lightboxes.
   const courtTest = (x, z) => x > G.x0 + 1.6 && x < G.x1 - 1.6 && z > G.z0 + 1.6 && z < G.z1 - 1.6;
@@ -885,20 +674,15 @@ export function generateMall(seed) {
   addFocus((V.x0 + V.x1) / 2, HA + 1, (V.z0 + V.z1) / 2, 0.8, 'skylight');
 
   // ------------------------------------------------------------ skyline
-  const towers = [];
-  for (let i = 0; i < 160; i++) {
-    const a = rng.range(0, Math.PI * 2);
-    const dist = i < 20 ? rng.range(70, 140) : rng.range(120, 800);
-    const x = Math.cos(a) * dist;
-    const z = Math.sin(a) * dist;
-    const w = rng.range(18, 44);
-    const d = rng.range(18, 44);
-    const nearPlaza = x + w / 2 > plaza.x0 - 30 && x - w / 2 < plaza.x1 + 30 && z + d / 2 > B.z0 - 30 && z - d / 2 < plaza.z1 + 20;
-    if (nearPlaza) continue;
-    towers.push({ x, z, w, d, y0: -0.4, h: rng.range(20, 50) + rng.next() ** 2 * rng.range(20, 180), tint: rng.pick(['#f1d9c8', '#f3f3f1', '#e9d2c9', '#dde6ee', '#f4e6d4']) });
-  }
-  // A tall glass tower right behind the mall.
-  towers.push({ x: rng.range(B.x0 + 10, B.x1 - 10), z: B.z0 - rng.range(30, 45), w: 30, d: 26, y0: -0.4, h: rng.range(110, 160), tint: '#cfdcea' });
+  // Streets and blocks all round, with the tallest towers rising behind.
+  const skyline = planSkyline(rng, {
+    site: ext.site,
+    groundY: ext.street,
+    radius: 1100,
+    downtown: { x: rng.range(B.x0, B.x1), z: B.z0 - rng.range(160, 320) },
+    tints: ['#f1d9c8', '#f3f3f1', '#e9d2c9', '#dde6ee', '#f4e6d4', '#f3f3f1', '#cfdcea'],
+    rise: rng.range(0.9, 1.25),
+  });
 
   return {
     seed,
@@ -913,7 +697,8 @@ export function generateMall(seed) {
     building: B,
     vestibule: VB,
     focus,
-    towers,
+    skyline,
+    exterior: ext,
     style,
     sun: { azimuth: rng.range(0, 360), elevation: rng.range(46, 68) },
     colliders: b.colliders,

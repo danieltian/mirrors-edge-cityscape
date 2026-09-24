@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { buildSkyline } from '../render/skyline.js';
 import { RNG } from '../util/rng.js';
 import { generateOffice, FH, CEIL } from './generator.js';
 import { NavGrid } from './nav.js';
@@ -106,7 +107,8 @@ export function facadeMaterial(tex) {
           vec3 an = abs( vFNor );
           if ( an.y < 0.5 ) {
             vec2 q = an.x > 0.5 ? vFPos.zy : vFPos.xy;
-            vec2 cell = q / 3.6;
+            // Storey height and window pitch vary from building to building.
+            vec2 cell = q / vec2( 2.7 + 1.8 * fract( vFSeed * 5.31 ), 3.3 + 0.9 * fract( vFSeed * 9.17 ) );
             float style = floor( vFSeed * 3.999 );
             vec2 base = vec2( mod( style, 2.0 ), floor( style / 2.0 ) ) * 0.5;
             vec2 auv = base + clamp( fract( cell ), 0.01, 0.99 ) * 0.5;
@@ -196,7 +198,7 @@ function createMaterials(o) {
     leaf: std({ color: o.mono ? pal.accent2 : pal.leaf, roughness: 0.75, flatShading: true, side: THREE.DoubleSide }),
     stem: std({ color: o.mono ? pal.dark : '#6c9a42', roughness: 0.7 }),
     leafSoft: std({ color: o.mono ? pal.accent2 : pal.leaf, roughness: 0.7, side: THREE.DoubleSide }),
-    ground: std({ color: '#c9ced2', roughness: 1 }, noShadow),
+    ground: std({ color: '#aab0b6', roughness: 1 }, noShadow), // streets between the pavements
     facade: facadeMaterial(tx.facade),
     model: std({ color: '#f5f5f3', roughness: 0.6 }),
     wood: std({ map: tx.wood.map, normalMap: tx.wood.normalMap, roughnessMap: tx.wood.roughnessMap, roughness: 1 }),
@@ -393,19 +395,10 @@ export function createOffice(seed, { mirror } = {}) {
   }
   const mirrorMats = [...mirrorKeys].map((k) => mats.materials[k]);
 
-  // Skyline around the building, and the tower this floor sits in.
+  // The city around the building, and the tower this floor sits in.
+  const skyline = buildSkyline(o.skyline, mats.materials.facade);
+  for (const c of [...skyline.children]) group.add(c);
   const unit = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
-  const towers = new THREE.InstancedMesh(unit, mats.materials.facade, o.towers.length);
-  const m4 = new THREE.Matrix4();
-  const q = new THREE.Quaternion();
-  o.towers.forEach((t, i) => {
-    m4.compose(new THREE.Vector3(t.x, t.y0, t.z), q, new THREE.Vector3(t.w, t.h, t.d));
-    towers.setMatrixAt(i, m4);
-  });
-  towers.userData.group = 'backdrop';
-  towers.castShadow = false;
-  towers.receiveShadow = false;
-  group.add(towers);
   const fp = o.footprint;
   const body = new THREE.Mesh(unit, mats.materials.facade);
   body.scale.set(fp.x1 - fp.x0 + 0.2, o.elev - 0.3, fp.z1 - fp.z0 + 0.2);
@@ -500,7 +493,7 @@ export function createOffice(seed, { mirror } = {}) {
     dispose() {
       group.traverse((c) => c.geometry?.dispose());
       unit.dispose();
-      towers.dispose();
+      skyline.userData.dispose();
       bounce.dispose();
       mats.dispose();
     },

@@ -105,6 +105,17 @@ export function installDebug(app) {
       this.step(3);
       return { type, n: rooms.length, pos: d.camera.position.toArray().map(Math.round) };
     },
+    // Put the (perspective) camera at pos looking at target.
+    look(pos, target, fov = 50) {
+      const d = app.director;
+      if (d.mode !== 'explore') d.setMode('explore');
+      const V3 = d.camera.position.constructor;
+      d.placePersp(new V3(...pos), new V3(...target), fov);
+      d.controls.target.set(...target);
+      d.controls.update();
+      this.step(3);
+      return d.camera.position.toArray();
+    },
     clean() {
       document.getElementById('loading').style.display = 'none';
       document.querySelector('.dock').style.visibility = 'hidden';
