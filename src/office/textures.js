@@ -994,3 +994,6 @@ export function pylon(company, accent) {
   g.restore();
   return toTexture(c, { repeat: false });
 }
+
+// Shared helpers for other worlds' textures.
+export { once, canvas, toTexture, field, samp, normalMap, grayMap, paint, clamp01, emblem, FONT };

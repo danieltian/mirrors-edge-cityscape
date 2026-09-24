@@ -1,12 +1,14 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import './styles.css';
-import { LOOK, OFFICE_LOOK } from './config.js';
+import { LOOK, OFFICE_LOOK, MALL_LOOK } from './config.js';
 import { generateCity } from './city/index.js';
 import { CityWorld } from './city/world.js';
 import { createOffice } from './office/index.js';
 import { OfficeWorld } from './office/world.js';
 import { FloorMirror } from './office/mirror.js';
+import { createMall } from './mall/index.js';
+import { MallPlanner } from './mall/shots.js';
 import { createMaterials } from './render/materials.js';
 import { Sky } from './render/sky.js';
 import { Water } from './render/water.js';
@@ -19,8 +21,9 @@ import { Music } from './audio/music.js';
 
 // Two worlds share one renderer, camera director and post pipeline:
 //   city   - the white cityscape from the title screen
-//   office - procedurally generated Mirror's Edge style office interiors
-const looks = { city: { ...LOOK }, office: { ...OFFICE_LOOK } };
+//   office - procedurally generated Mirror's Edge style office floors
+//   mall   - a New Eden style shopping mall and its plaza
+const looks = { city: { ...LOOK }, office: { ...OFFICE_LOOK }, mall: { ...MALL_LOOK } };
 const look = { ...looks.city }; // the active world's look (edited by the settings panel)
 let kind = 'city';
 
@@ -54,6 +57,7 @@ const post = new Post(renderer, scene, director.camera, look);
 
 let city = null;
 let office = null;
+let mall = null;
 let world = null;
 const stats = { text: '' };
 
@@ -204,9 +208,10 @@ function applyLook() {
 
 function setAccents(on) {
   look.accents = on;
-  looks.city.accents = looks.office.accents = on;
+  looks.city.accents = looks.office.accents = looks.mall.accents = on;
   city?.setAccents(on);
   office?.setAccents(on);
+  mall?.setAccents(on);
   dock?.sync();
 }
 
@@ -226,6 +231,11 @@ function buildWorld(k, seed) {
     office.dispose();
     office = null;
   }
+  if (mall) {
+    scene.remove(mall.group);
+    mall.dispose();
+    mall = null;
+  }
   if (k !== kind) {
     looks[kind] = { ...look };
     Object.assign(look, looks[k]);
@@ -242,6 +252,21 @@ function buildWorld(k, seed) {
     water.mesh.visible = true;
     world = new CityWorld(city, { getAspect, getSunDir: () => lighting.dir });
     stats.text = `${city.stats.lots} lots · ${Math.round(city.stats.prims / 1000)}k parts · ${city.stats.ms} ms`;
+  } else if (k === 'mall') {
+    const t0 = performance.now();
+    mall = createMall(seed, { mirror: floorMirror });
+    scene.add(mall.group);
+    mall.setAccents(look.accents);
+    lighting.bounds = mall.bounds;
+    look.sunAzimuth = mall.sun.azimuth;
+    look.sunElevation = mall.sun.elevation;
+    // Shade picks up the accent colour, like the amber-soaked game shots.
+    look.shadowTint = '#' + new THREE.Color(mall.palette.accent).multiplyScalar(0.6).getHexString();
+    look.shadowTintAmount = 0.16;
+    scene.environment = officeEnv();
+    water.mesh.visible = false;
+    world = new OfficeWorld(mall, { getAspect, Planner: MallPlanner, kind: 'mall', isoFrameRange: [40, 180], maxDistance: 120 });
+    stats.text = `${mall.mall.name} · ${mall.palette.name} · ${mall.levels} levels · ${Math.round(performance.now() - t0)} ms`;
   } else {
     const t0 = performance.now();
     office = createOffice(seed, { mirror: floorMirror });
@@ -262,7 +287,7 @@ function buildWorld(k, seed) {
   director.setWorld(world, post);
   const url = new URL(location.href);
   url.searchParams.set('seed', seed);
-  if (k === 'office') url.searchParams.set('world', 'office');
+  if (k !== 'city') url.searchParams.set('world', k);
   else url.searchParams.delete('world');
   history.replaceState(null, '', url);
   gui?.refresh();
@@ -293,7 +318,7 @@ applyLook();
 // Build after the first paint so the white loading screen shows immediately.
 setTimeout(() => {
   const seed = Number(params.get('seed'));
-  buildWorld(params.get('world') === 'office' ? 'office' : 'city', Number.isFinite(seed) && seed > 0 ? Math.floor(seed) : randomSeed());
+  buildWorld(['office', 'mall'].includes(params.get('world')) ? params.get('world') : 'city', Number.isFinite(seed) && seed > 0 ? Math.floor(seed) : randomSeed());
   dock = createDock({
     director,
     getWorld: () => kind,
@@ -309,7 +334,7 @@ setTimeout(() => {
       music.nextTune();
     },
   });
-  gui = createGui({ look, applyLook, director, current: () => ({ kind, seed: city?.seed ?? office?.seed }), newWorld, setAccents, stats, musicPrefs });
+  gui = createGui({ look, applyLook, director, current: () => ({ kind, seed: city?.seed ?? office?.seed ?? mall?.seed }), newWorld, setAccents, stats, musicPrefs });
   dock.sync();
   resize();
   start();
@@ -358,7 +383,7 @@ function renderFrame(dt) {
   if (kind === 'city') {
     water.uniforms.uTime.value += dt;
     water.render(renderer, scene, cam, sky);
-  } else if (office) {
+  } else if (office || mall) {
     floorMirror.render(renderer, scene, cam, sky, world?.clipPlanes || []);
   }
 
@@ -388,6 +413,9 @@ window.__city = {
   },
   get office() {
     return office;
+  },
+  get mall() {
+    return mall;
   },
   get world() {
     return world;

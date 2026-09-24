@@ -92,3 +92,28 @@ export const OFFICE_LOOK = {
   highlightNeutral: 0.12,
   baseDarken: 0,
 };
+
+// The mall: warm, saturated interiors under a skylight, and a deep blue sky
+// over the plaza outside.
+export const MALL_LOOK = {
+  ...OFFICE_LOOK,
+  exposure: 0.82,
+  sunElevation: 60, // overridden per mall
+  sunAzimuth: 0,
+  sunIntensity: 4.6,
+  sunColor: '#fff1dc',
+  skyLight: '#fff6ea',
+  groundLight: '#a8835c',
+  hemiIntensity: 1.0,
+  zenith: '#2f6ed8',
+  horizon: '#c7d7ea',
+  skyIntensity: 2.4,
+  fogColor: '#e6eef6',
+  fogDensity: 0.0025,
+  fogStart: 120,
+  bloomIntensity: 0.6,
+  saturation: 1.2,
+  contrast: 1.1,
+  aoIntensity: 4.2,
+  highlightNeutral: 0.1,
+};

@@ -5,5 +5,5 @@ export default defineConfig({
   // (e.g. https://<user>.github.io/<repo>/) or straight from a folder.
   base: './',
   // three + postprocessing + N8AO land in one ~1 MB chunk; that's expected.
-  build: { chunkSizeWarningLimit: 1200 },
+  build: { chunkSizeWarningLimit: 1600 },
 });

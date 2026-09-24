@@ -2,21 +2,22 @@ import * as THREE from 'three';
 import { OfficePlanner } from './shots.js';
 import { PanMotion, yawOf } from '../camera/motions.js';
 
-// Adapts an office to the camera director (same interface as CityWorld).
+// Adapts an office (or mall) to the camera director (same interface as CityWorld).
 
+// Also used for the mall, with its own planner and a few different limits.
 export class OfficeWorld {
-  constructor(office, { getAspect }) {
-    this.kind = 'office';
+  constructor(office, { getAspect, Planner = OfficePlanner, kind = 'office', isoFrameRange = [30, 150], maxDistance = 60 }) {
+    this.kind = kind;
     this.office = office;
-    this.planner = new OfficePlanner(office, getAspect);
+    this.planner = new Planner(office, getAspect);
     this.isoDist = 400;
     this.orthoNear = 1;
     this.minNear = 0.05;
     this.depthRange = 500;
-    this.isoFrameRange = [30, 150];
+    this.isoFrameRange = isoFrameRange;
     const fp = office.footprint;
     this.isoRadius = Math.min(fp.x1 - fp.x0, fp.z1 - fp.z0) * 0.25;
-    this.explore = { minDistance: 0.2, maxDistance: 60, maxPolar: Math.PI * 0.97, screenSpacePanning: true };
+    this.explore = { minDistance: 0.2, maxDistance, maxPolar: Math.PI * 0.97, screenSpacePanning: true };
     this.morphDist = [3, 20];
   }
 
@@ -33,7 +34,7 @@ export class OfficeWorld {
   }
 
   clip() {
-    return { near: 0.05, far: 3000, ao: 1.0 };
+    return { near: 0.1, far: 3000, ao: 1.0 };
   }
 
   liftNeeded() {

@@ -196,7 +196,7 @@ export function monitor(f, x, y, z, rot = 0, w = 0.56) {
   const fx = Math.sin(rot);
   const fz = Math.cos(rot);
   f.geo('black', UBOX, x, y + 0.34, z, rot, w, w * 0.6, 0.025);
-  f.geo('monitor', PLANE, x + fx * 0.0135, y + 0.34, z + fz * 0.0135, rot, w - 0.03, w * 0.6 - 0.03, 1);
+  f.geo('monitor', PLANE, x + fx * 0.02, y + 0.34, z + fz * 0.02, rot, w - 0.03, w * 0.6 - 0.03, 1);
   f.geo('darkMetal', UBOX, x - fx * 0.03, y + 0.14, z - fz * 0.03, rot, 0.04, 0.26, 0.03);
   f.geo('darkMetal', UBOX, x - fx * 0.03, y + 0.008, z - fz * 0.03, rot, 0.24, 0.015, 0.18);
 }
@@ -234,7 +234,7 @@ export function execDesk(b, rng, x, y, z, rot) {
   f.box('deskTop', -w / 2, 0.72, -0.43, w / 2, 0.76, 0.43);
   f.box('white', -w / 2, 0, -0.4, -w / 2 + 0.05, 0.72, 0.4);
   f.box('white', w / 2 - 0.48, 0, -0.4, w / 2, 0.72, 0.4);
-  f.box('skirting', w / 2 - 0.47, 0.36, -0.401, w / 2 - 0.01, 0.366, -0.4);
+  f.box('skirting', w / 2 - 0.47, 0.36, -0.406, w / 2 - 0.01, 0.366, -0.4);
   f.box('white', -w / 2 + 0.05, 0.3, 0.38, w / 2 - 0.48, 0.72, 0.4);
   monitor(f, -0.3, 0.76, 0.22, Math.PI - 0.12, 0.52);
   monitor(f, 0.26, 0.76, 0.22, Math.PI + 0.12, 0.52);
@@ -531,7 +531,7 @@ export function smokeDetector(b, x, y, z) {
 
 export function diffuser(b, x, y, z, s = 0.6) {
   const f = b.frame(x, y, z, 0);
-  f.geo('ceil:diffuser', PLANE, 0, -0.004, 0, 0, s, s, 1, Math.PI / 2);
+  f.geo('ceil:diffuser', PLANE, 0, -0.009, 0, 0, s, s, 1, Math.PI / 2);
 }
 
 export function pendantRing(b, x, y, z, R, ceilY) {
@@ -615,21 +615,21 @@ export function tv(b, x, y, z, rot, w, screenKey = 'screen0') {
   const h = w * 0.5625;
   const f = b.frame(x, y, z, rot);
   f.box('black', -w / 2 - 0.03, -0.03, 0, w / 2 + 0.03, h + 0.03, 0.05);
-  f.geo(screenKey, PLANE, 0, h / 2, 0.052, 0, w, h, 1);
+  f.geo(screenKey, PLANE, 0, h / 2, 0.058, 0, w, h, 1);
   f.box('black', -w * 0.3, -0.12, 0, w * 0.3, -0.05, 0.08);
 }
 
 export function art(b, x, y, z, rot, w, h, key, frameKey = 'white') {
   const f = b.frame(x, y, z, rot);
   f.box(frameKey, -w / 2 - 0.02, -0.02, 0, w / 2 + 0.02, h + 0.02, 0.045);
-  f.geo(key, PLANE, 0, h / 2, 0.047, 0, w, h, 1);
+  f.geo(key, PLANE, 0, h / 2, 0.053, 0, w, h, 1);
 }
 
 export function whiteboard(b, x, y, z, rot, w) {
   const f = b.frame(x, y, z, rot);
   const h = w * 0.55;
   f.box('metal', -w / 2 - 0.02, -0.02, 0, w / 2 + 0.02, h + 0.02, 0.02);
-  f.box('whiteGloss', -w / 2, 0, 0.001, w / 2, h, 0.022);
+  f.box('whiteGloss', -w / 2, 0, 0.001, w / 2, h, 0.03);
   f.box('metal', -w / 2 + 0.1, -0.05, 0, w / 2 - 0.1, -0.02, 0.07);
 }
 
@@ -654,14 +654,14 @@ export function scallop(b, x, yTop, z, rot, w = 1.3, h = 2.5) {
 export function exitSign(b, x, y, z, rot) {
   const f = b.frame(x, y, z, rot);
   f.box('white', -0.2, 0, 0, 0.2, 0.2, 0.05);
-  f.geo('exit', PLANE, 0, 0.1, 0.052, 0, 0.36, 0.18, 1);
+  f.geo('exit', PLANE, 0, 0.1, 0.058, 0, 0.36, 0.18, 1);
 }
 
 export function pylon(b, x, y, z, rot, h, key = 'pylon') {
   const f = b.frame(x, y, z, rot);
   const w = h / 4;
   f.box('white', -w / 2, 0, -0.18, w / 2, h, 0.18, true);
-  f.geo(key, PLANE, 0, h / 2, 0.182, 0, w, h, 1);
+  f.geo(key, PLANE, 0, h / 2, 0.188, 0, w, h, 1);
   f.box('accent', -w / 2 - 0.02, 0, -0.2, w / 2 + 0.02, 0.08, 0.2);
 }
 
@@ -669,7 +669,7 @@ export function pylon(b, x, y, z, rot, h, key = 'pylon') {
 // open: leaf swung 90 degrees toward side `into` (+1 / -1 along the wall
 // normal); otherwise the leaf closes the opening.
 export function door(b, axis, c, a0, a1, y, top, { open = true, into = 1, glass = false, frame = 'metal', leaf = 'doorWhite', T = 0.2 }) {
-  const ft = T / 2 + 0.015;
+  const ft = T / 2 + 0.04; // architraves stand proud of any wall cladding
   b.wallBox(frame, axis, c, a0 - 0.05, a0, y, y + top + 0.05, -ft, ft);
   b.wallBox(frame, axis, c, a1, a1 + 0.05, y, y + top + 0.05, -ft, ft);
   b.wallBox(frame, axis, c, a0, a1, y + top, y + top + 0.05, -ft, ft);
@@ -694,14 +694,14 @@ export function door(b, axis, c, a0, a1, y, top, { open = true, into = 1, glass 
   if (axis === 'x') {
     panel(a0 + 0.005, Math.min(n0, n1), a0 + 0.005 + t, Math.max(n0, n1));
     if (glass) {
-      b.box('metal', a0 + 0.004, y, Math.min(n0, n1), a0 + t + 0.006, y + 0.12, Math.max(n0, n1), false);
-      b.box('metal', a0 + 0.004, y + top - 0.07, Math.min(n0, n1), a0 + t + 0.006, y + top, Math.max(n0, n1), false);
+      b.box('metal', a0 - 0.006, y, Math.min(n0, n1) - 0.01, a0 + t + 0.016, y + 0.12, Math.max(n0, n1) + 0.01, false);
+      b.box('metal', a0 - 0.006, y + top - 0.07, Math.min(n0, n1) - 0.01, a0 + t + 0.016, y + top - 0.005, Math.max(n0, n1) + 0.01, false);
     }
   } else {
     panel(Math.min(n0, n1), a0 + 0.005, Math.max(n0, n1), a0 + 0.005 + t);
     if (glass) {
-      b.box('metal', Math.min(n0, n1), y, a0 + 0.004, Math.max(n0, n1), y + 0.12, a0 + t + 0.006, false);
-      b.box('metal', Math.min(n0, n1), y + top - 0.07, a0 + 0.004, Math.max(n0, n1), y + top, a0 + t + 0.006, false);
+      b.box('metal', Math.min(n0, n1) - 0.01, y, a0 - 0.006, Math.max(n0, n1) + 0.01, y + 0.12, a0 + t + 0.016, false);
+      b.box('metal', Math.min(n0, n1) - 0.01, y + top - 0.07, a0 - 0.006, Math.max(n0, n1) + 0.01, y + top - 0.005, a0 + t + 0.016, false);
     }
   }
 }
@@ -719,7 +719,7 @@ export function elevators(b, axis, c, a0, a1, y, side, T = 0.2) {
     b.wallBox('metal', axis, c, m - hw, m - 0.004, y, y + 2.25, ...out(0.04, 0.055));
     b.wallBox('metal', axis, c, m + 0.004, m + hw, y, y + 2.25, ...out(0.04, 0.055));
     b.wallBox('black', axis, c, m - 0.25, m + 0.25, y + 2.52, y + 2.66, ...out(0, 0.03));
-    b.wallBox('emissiveWarm', axis, c, m - 0.08, m + 0.08, y + 2.56, y + 2.62, ...out(0.03, 0.034));
+    b.wallBox('emissiveWarm', axis, c, m - 0.08, m + 0.08, y + 2.56, y + 2.62, ...out(0.03, 0.04));
     const bx = m + hw + 0.35;
     b.wallBox('metal', axis, c, bx - 0.06, bx + 0.06, y + 1.0, y + 1.25, ...out(0, 0.015));
     b.wallBox('emissiveWarm', axis, c, bx - 0.02, bx + 0.02, y + 1.08, y + 1.12, ...out(0.015, 0.02));

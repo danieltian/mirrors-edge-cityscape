@@ -27,7 +27,7 @@ const UV_SCALE = {
 
 // Shared shader hooks: bounce-light scaling for everything, the planar floor
 // reflection for polished floors.
-function patch(mat, U, mirror) {
+export function patch(mat, U, mirror) {
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, U);
     shader.vertexShader = shader.vertexShader
@@ -79,7 +79,7 @@ function patch(mat, U, mirror) {
 
 // Skyline facades: window bays from an atlas, mapped from world position so
 // scaled instances keep a constant bay size.
-function facadeMaterial(tex) {
+export function facadeMaterial(tex) {
   const m = new THREE.MeshStandardMaterial({ color: '#f1f2f3', roughness: 0.85 });
   m.onBeforeCompile = (s) => {
     s.uniforms.uFacade = { value: tex };
@@ -242,7 +242,7 @@ function createMaterials(o) {
 }
 
 // Uniform grid over the floor plan for fast ray casts and overlap queries.
-class ColliderGrid {
+export class ColliderGrid {
   constructor(colliders, fp, cell = 2) {
     this.c = colliders;
     this.cell = cell;

@@ -137,7 +137,7 @@ export class Director {
   toggleProjection() {
     if (this.transition) return;
     if (this.projection === 'persp') this.morphToIso();
-    else if (this.world.kind === 'office') this.cutToPersp();
+    else if (this.world.kind !== 'city') this.cutToPersp();
     else this.morphToPersp();
   }
 

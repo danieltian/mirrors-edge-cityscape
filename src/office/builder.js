@@ -76,6 +76,39 @@ export class Builder {
     else this.box(key, c + o0, y0, a0, c + o1, y1, a1, collide);
   }
 
+  matrix(key, geo, m) {
+    const g = geo.clone();
+    g.applyMatrix4(m);
+    this.push(key, g);
+  }
+
+  // Unit geometry (height 1 along +y, centred) stretched between two points.
+  between(key, geo, p, q, r) {
+    _v.subVectors(q, p);
+    const len = _v.length();
+    if (len < 1e-4) return;
+    _q.setFromUnitVectors(UP, _v.divideScalar(len));
+    _m.compose(_p.addVectors(p, q).multiplyScalar(0.5), _q, _s.set(r, len, r));
+    this.matrix(key, geo, _m);
+  }
+
+  // Colliders along a sloped or diagonal segment, as a chain of small boxes.
+  chain(x0, y0, z0, x1, y1, z1, half, h, extra) {
+    const len = Math.hypot(x1 - x0, y1 - y0, z1 - z0);
+    const n = Math.max(1, Math.ceil(len / 0.4));
+    for (let i = 0; i < n; i++) {
+      const t0 = i / n;
+      const t1 = (i + 1) / n;
+      const ax = x0 + (x1 - x0) * t0;
+      const bx = x0 + (x1 - x0) * t1;
+      const az = z0 + (z1 - z0) * t0;
+      const bz = z0 + (z1 - z0) * t1;
+      const ay = y0 + (y1 - y0) * t0;
+      const by = y0 + (y1 - y0) * t1;
+      this.collider(Math.min(ax, bx) - half, Math.min(ay, by), Math.min(az, bz) - half, Math.max(ax, bx) + half, Math.max(ay, by) + h, Math.max(az, bz) + half, extra);
+    }
+  }
+
   frame(x, y, z, rotY = 0) {
     return new Frame(this, x, y, z, rotY);
   }

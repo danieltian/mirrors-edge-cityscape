@@ -1,26 +1,26 @@
 # White City
 
-A procedural, all-white cityscape in the spirit of the Mirror's Edge title screen: clean untextured towers, soft blue shade, white haze, and a calm river that mirrors the skyline. It also has an **Office** world with generated Mirror's Edge style interiors. Built with Three.js.
+A procedural, all-white cityscape in the spirit of the Mirror's Edge title screen: clean untextured towers, soft blue shade, white haze, and a calm river that mirrors the skyline. It also has two generated interior worlds in the same style: an **Office** floor and a **Mall**. Built with Three.js.
 
 ```bash
 npm install
 npm run dev
 ```
 
-Add `?seed=1234` to the URL to reproduce a specific city, or `?world=office&seed=1234` for an office. The current world and seed are always written back to the URL.
+Add `?seed=1234` to the URL to reproduce a specific city, or `?world=office&seed=1234` / `?world=mall&seed=1234` for an office or a mall. The current world and seed are always written back to the URL.
 
 ## Controls
 
 | Key | Action |
 | --- | --- |
-| O | Switch between the **City** and **Office** worlds |
+| O | Cycle through the **City**, **Office** and **Mall** worlds |
 | Space | Toggle **Drift** (automatic camera) / **Explore** |
 | R | Jump to a random viewpoint |
 | I | Toggle perspective / isometric |
 | T | Tour: cycle viewpoints automatically |
 | C | Colour accents on/off |
 | M | Music on/off (Shift+M: next tune) |
-| N | Generate a new city / office |
+| N | Generate a new city / office / mall |
 | G | Settings panel |
 | H | Hide the control dock |
 | F | Fullscreen |
@@ -61,6 +61,29 @@ In Drift the camera tours the floor, always heading somewhere it hasn't shown ye
 - corridor dollies, views from the mezzanine and cranes up the atrium
 
 After 8–11 shots it moves on to a freshly generated office. Explore uses collision against the walls and furniture. Isometric shows the whole floor as a cut-away dollhouse.
+
+## Mall world
+
+A shopping mall in the spirit of the game's New Eden Mall, generated from a seed. No two come out alike:
+- **The void:** three to five levels rise to the skylight around a void that can be chamfered, rounded, square-cornered, stadium-ended, lozenge-shaped, or swell into a rotunda at one end. It changes on every level: ends step outward, rotundas widen, and balconies (angular or curved) jut into the void or recess from it.
+- **Galleries:** the fascias come in five styles:
+  - accent with a black stripe (the classic)
+  - accent with twin lines
+  - white with an accent band
+  - black with an accent band
+  - a slim edge
+
+  Railings are glass, bars or solid painted parapets. Columns are round or square: banded, tiled, plain, or in the accent colour.
+- **Escalators:** a switchback stack or a straight cascade of escalator pairs crosses the void between bridges, in the accent colour, white or dark steel, sometimes with glass balustrades. Many malls have a glass lift.
+- **Skylight:** a space frame, a barrel vault, a pitched glass ridge or a grid of deep beams.
+- **Hanging in the void:** blue glass tubes, clusters of glowing spheres, stacked rings, a mobile of coloured discs, or nothing, plus a varying number of banners.
+- **The court:** one or two centrepieces: a sofa lounge on a rug, a tiered fountain, a café, a grove of white trees, a round information desk, or a sculpture on a stage. The floor tint varies; some malls have a band of darker tile tracing the void, a field under it, or stripes.
+- **Shops:** the mix of shutters, lit glass fronts and billboard bays and the unit widths vary from mall to mall, under signs for invented brands.
+- **Colour:** mostly amber like the game, but also tangerine, lemon, coral, lime, aqua, scarlet, violet, green or sky blue, each with its own banner colour.
+- **Light:** sun comes only through the skylight, so the void is bright and the galleries fall into warm shade the further they are from it. The accent colour tints the shadows.
+- **Outside:** a glazed entrance box with diagonal struts and the mall's name faces a sunny plaza with planters, white trees, benches, banner poles, billboards and a colonnade. Some plazas have a fountain or an outdoor café with umbrellas.
+
+In Drift the camera rides the escalators, leans over the railings, walks the galleries, looks up from the court at the balconies and skylight, looks along the void from a bridge and crosses the plaza to the entrance. After 8–10 shots it moves on to a new mall. Isometric cuts the building open above the first gallery.
 
 ## Music
 
@@ -127,7 +150,15 @@ To check the production build locally, run `npm run build && npm run preview`. F
 - `nav.js`: walkable grids with connected areas, A* and path smoothing.
 - `shots.js`: the office viewpoint planner.
 - `index.js`: materials and shader hooks, a collider grid for fast ray casts and collision, and the cut-away.
-- `world.js`: the adapter the camera director uses (`src/city/world.js` is the city's equivalent).
+- `world.js`: the adapter the camera director uses (`src/city/world.js` is the city's equivalent; the mall reuses this one).
+
+**Mall** (`src/mall/`)
+- `plan.js`: the layout: void shape and its outline on each level, gallery ring, escalator layout and bridges, lift, shop units, entrance and plaza.
+- `generator.js`: picks each mall's style, then builds floors and soffits cut around the void, fascias, railings, columns, escalators, shopfronts and interiors, the facade, entrance box, plaza and decor.
+- `props.js`: mall pieces (fascia styles, escalators, the four skylights, banners and chandeliers, white trees, fountains, kiosks, lightboxes, billboards and more).
+- `textures.js`: roller shutters, mosaic, paving, brand signs, banners, adverts, posters and the mall's name.
+- `shots.js`: the mall viewpoint planner.
+- `index.js`: materials, bounce light, walkable grids for each level and the plaza, collision and the cut-away.
 
 **Camera** (`src/camera/`)
 - `shots.js`: random viewpoints of several kinds: aerial, rooftop edge, river cruise, down an avenue, landmark orbit and harbour skyline. Each candidate is scored by marching 46 rays through the heightfield. It rejects walls in the face, low clearance and frames without city, and rewards depth, some water, landmarks and side lighting.

@@ -436,7 +436,7 @@ export function generateOffice(seed) {
     if (r.level === 0) b.box(r.floor, r.x0, -0.3, r.z0, r.x1, 0, r.z1);
     else {
       b.box('wall', r.x0, y - 0.32, r.z0, r.x1, y - 0.02, r.z1);
-      b.box(r.floor, r.x0, y - 0.02, r.z0, r.x1, y, r.z1);
+      b.box(r.floor, r.x0, y - 0.02, r.z0, r.x1, y + 0.008, r.z1);
     }
     if (r === atrium) continue;
     b.box(`ceil:${r.ceiling}`, r.x0, y + CEIL, r.z0, r.x1, y + CEIL + 0.04, r.z1);
@@ -490,7 +490,7 @@ export function generateOffice(seed) {
   const colKey = rng.chance(0.35) ? 'accent' : 'white';
   for (const m of plan.mezz) {
     b.box('wall', m.x0, FH - 0.36, m.z0, m.x1, FH - 0.02, m.z1);
-    b.box(mezzFloor, m.x0, FH - 0.02, m.z0, m.x1, FH, m.z1);
+    b.box(mezzFloor, m.x0, FH - 0.02, m.z0, m.x1, FH + 0.008, m.z1);
     const alongX = m.open === 'N' || m.open === 'S';
     const ec = m.open === 'N' ? m.z0 : m.open === 'S' ? m.z1 : m.open === 'W' ? m.x0 : m.x1;
     const out = m.open === 'N' || m.open === 'W' ? -1 : 1; // toward the void

@@ -15,6 +15,7 @@ export function createDock({ director, getWorld, setWorld, getAccents, setAccent
     <div class="seg" role="group" aria-label="World">
       <button data-world="city" title="City (O)">City</button>
       <button data-world="office" title="Office (O)">Office</button>
+      <button data-world="mall" title="Mall (O)">Mall</button>
     </div>
     <div class="seg" role="group" aria-label="Camera mode">
       <button data-mode="drift" title="Drift (Space)">Drift</button>
@@ -103,7 +104,7 @@ export function createDock({ director, getWorld, setWorld, getAccents, setAccent
     else if (k === 'm') toggleMusic();
     else if (k === 'g') toggleSettings();
     else if (k === 'n') newWorld();
-    else if (k === 'o') setWorld(getWorld() === 'city' ? 'office' : 'city');
+    else if (k === 'o') setWorld({ city: 'office', office: 'mall', mall: 'city' }[getWorld()]);
     else if (k === 'h') {
       hiddenByUser = !hiddenByUser;
       el.classList.toggle('hidden', hiddenByUser);

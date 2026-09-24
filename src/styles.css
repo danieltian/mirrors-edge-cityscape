@@ -189,6 +189,16 @@ body {
   transform: translate(-50%, 0);
 }
 
+@media (max-width: 1180px) {
+  .dock button {
+    letter-spacing: 0.1em;
+    padding: 9px 9px;
+  }
+  .dock .seg button {
+    padding: 7px 8px;
+  }
+}
+
 @media (max-width: 640px) {
   .dock {
     gap: 4px;

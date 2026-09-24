@@ -259,7 +259,7 @@ class Decor {
   }
 
   rug(r, x0, z0, x1, z1) {
-    this.b.box(this.rng.chance(0.7) ? 'carpet' : 'carpetGray', x0, r.y, z0, x1, r.y + 0.012, z1, false);
+    this.b.box(this.rng.chance(0.7) ? 'carpet' : 'carpetGray', x0, r.y, z0, x1, r.y + 0.022, z1, false);
   }
 
   // Sofa group: a sofa (or two facing) with a coffee table, armchairs opposite.
@@ -495,8 +495,8 @@ class Decor {
     ]);
     if (runner && width > 2.6) {
       const hw = width / 2 - rng.range(0.5, 0.8);
-      if (alongX) b.box(runner, L0 + 0.3, 0, mid - hw, L1 - 0.3, runner === 'carpet' ? 0.012 : 0.004, mid + hw, false);
-      else b.box(runner, mid - hw, 0, L0 + 0.3, mid + hw, runner === 'carpet' ? 0.012 : 0.004, L1 - 0.3, false);
+      if (alongX) b.box(runner, L0 + 0.3, 0, mid - hw, L1 - 0.3, 0.012, mid + hw, false);
+      else b.box(runner, mid - hw, 0, L0 + 0.3, mid + hw, 0.012, L1 - 0.3, false);
     }
     if (rng.chance(0.55)) {
       const framed = rng.chance(0.5);
