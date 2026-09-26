@@ -3,11 +3,14 @@ import { RNG } from '../util/rng.js';
 import { PanMotion, TrackMotion, PathMotion, IsoPanMotion, yawOf } from '../camera/motions.js';
 
 // Viewpoints on the rooftops, always at eye level on a roof (never out in
-// mid-air), moving the way the other worlds' cameras do: a slow walk across
-// a roof, over a walkway or up a service stair to the next roof, or a slow
-// sideways drift a few steps back from a parapet looking out over the city
-// and the harbour, past housings and plant, or up a glass tower. Each shot
-// prefers a place not shown yet.
+// mid-air) and mostly about the roofs themselves, moving the way the other
+// worlds' cameras do: standing at the side of a roof looking across it at
+// its plant, core, pipes and ducts or the dressed wall of a neighbour; close
+// by a piece of plant; a slow walk across a roof, over a walkway or up a
+// service stair to the next roof; now and then well back from a parapet
+// looking out over the city, or up a glass tower. Frames are scored on how
+// much of them is roof (things 2.5-45 m away) rather than distant skyline.
+// Each shot prefers a place not shown yet.
 
 const EYE = 1.7; // eye height above the roof
 const deg = THREE.MathUtils.degToRad;
@@ -36,6 +39,7 @@ export class RooftopPlanner {
     let near = 0;
     let close = 0;
     let far = 0;
+    let mid = 0;
     let sumLog = 0;
     for (let iy = 0; iy < 5; iy++) {
       for (let ix = 0; ix < 9; ix++) {
@@ -45,17 +49,20 @@ export class RooftopPlanner {
         if (t < 1.0) near++;
         if (t < 2.5) close++;
         if (t > 60) far++;
+        if (t > 2.5 && t < 45) mid++;
         sumLog += Math.log(Math.min(t, 300) + 1);
       }
     }
     const center = this.o.raycast(pos.x, pos.y, pos.z, f.x, f.y, f.z, 300, true);
-    return { near: near / n, close: close / n, far: far / n, mean: sumLog / n, center };
+    return { near: near / n, close: close / n, far: far / n, mid: mid / n, mean: sumLog / n, center };
   }
 
   score(ev, prefs = {}) {
     if (ev.near > (prefs.maxNear ?? 0.12)) return -Infinity;
     if (ev.center < (prefs.minCenter ?? 6)) return -Infinity;
     if (ev.close > (prefs.maxClose ?? 0.3)) return -Infinity;
+    // Roof shots: as much roof and as little distant skyline as possible.
+    if (prefs.roof) return ev.mid * 1.8 + ev.mean * 0.2 - Math.max(0, ev.far - 0.4) * 1.5 + this.rng.range(0, 0.4);
     const farPart = Math.min(ev.far, prefs.farCap ?? 0.5);
     return ev.mean * 0.5 + farPart + this.rng.range(0, 0.5);
   }
@@ -92,8 +99,12 @@ export class RooftopPlanner {
   track(nav, pos, target, fov, speed) {
     const dir = target.clone().sub(pos).setY(0).normalize();
     let vel = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(this.rng.sign() * speed);
+    // The drift covers up to ~22 s of travel within a shot; check it every
+    // 0.25 m so it can't slip past a post.
     const clear = (v) => {
-      for (let k = 1; k <= 10; k++) if (!nav.isFree(pos.x + v.x * 2.2 * k, pos.z + v.z * 2.2 * k)) return false;
+      const reach = Math.hypot(v.x, v.z) * 22;
+      const n = Math.ceil(reach / 0.25);
+      for (let k = 1; k <= n; k++) if (!nav.isFree(pos.x + (v.x * 22 * k) / n, pos.z + (v.z * 22 * k) / n)) return false;
       return true;
     };
     if (!clear(vel)) {
@@ -123,10 +134,10 @@ export class RooftopPlanner {
     const pts = path.map(([x, z]) => new THREE.Vector3(x, g.y + EYE, z));
     if (pts.length === 2) pts.splice(1, 0, pts[0].clone().lerp(pts[1], 0.5));
     const fov = this.rng.range(66, 76);
-    const motion = new PathMotion({ points: pts, speed: this.rng.range(1.0, 1.4), fov, lookAhead: 6 });
+    const motion = new PathMotion({ points: pts, speed: this.rng.range(1.0, 1.4), fov, lookAhead: 6, dip: 0.8 });
     const probe = { pos: new THREE.Vector3(), target: new THREE.Vector3(), fov };
     motion.update(0, probe);
-    return { kind: 'walk', zone: `roof${g.id}`, pos: probe.pos.clone(), target: probe.target.clone(), fov, motion: () => motion, prefs: { minCenter: 4, maxNear: 0.2, maxClose: 0.45 } };
+    return { kind: 'walk', zone: `roof${g.id}`, pos: probe.pos.clone(), target: probe.target.clone(), fov, motion: () => motion, prefs: { roof: true, minCenter: 4, maxNear: 0.2, maxClose: 0.45 } };
   }
 
   // Over a walkway or up a service stair onto the next roof.
@@ -143,7 +154,30 @@ export class RooftopPlanner {
     return { kind: 'cross', zone: `link${this.o.linkPaths.indexOf(p)}`, pos: probe.pos.clone(), target: probe.target.clone(), fov, motion: () => motion, prefs: { minCenter: 2, maxNear: 0.3, maxClose: 0.6 } };
   }
 
-  // Standing a few steps back from a parapet, looking out over the city.
+  // Standing at the side of a roof looking across it at its plant, core,
+  // services, a sign or a neighbour's dressed wall.
+  across() {
+    const f = this.focus(['plant', 'core', 'services', 'wall', 'billboard', 'garden', 'helipad', 'solar']);
+    if (!f) return null;
+    const g = this.o.roofGroups.find((q) => q.y <= f.y + 0.5 && f.y - q.y < 16 && q.rects.some((r) => f.x > r.x0 - 3 && f.x < r.x1 + 3 && f.z > r.z0 - 3 && f.z < r.z1 + 3));
+    if (!g) return null;
+    const nav = this.o.navs[g.id];
+    for (let i = 0; i < 12; i++) {
+      const p = nav.randomFree(this.rng);
+      if (!p) continue;
+      const dist = Math.hypot(p[0] - f.x, p[1] - f.z);
+      if (dist < 8 || dist > 32) continue;
+      const pos = new THREE.Vector3(p[0], g.y + EYE, p[1]);
+      const up = f.tag === 'wall' || f.tag === 'billboard';
+      const target = new THREE.Vector3(f.x + this.rng.range(-1.5, 1.5), up ? Math.min(f.y, g.y + 6) : g.y + this.rng.range(0.3, 1.6), f.z + this.rng.range(-1.5, 1.5));
+      const fov = this.rng.range(60, 72);
+      return { kind: 'across', zone: `across${g.id}-${Math.round(f.x)}`, pos, target, fov, duration: this.rng.range(14, 20), prefs: { roof: true, minCenter: 5, maxClose: 0.35 }, motion: this.track(nav, pos, target, fov, this.rng.range(0.15, 0.3)) };
+    }
+    return null;
+  }
+
+  // Standing well back from a parapet, looking out over the city with the
+  // roof in front.
   vista() {
     const g = this.group();
     if (!g) return null;
@@ -151,13 +185,13 @@ export class RooftopPlanner {
     const r = this.rng.pick(g.rects);
     const e = this.rng.pick(['N', 'S', 'W', 'E']);
     const t = this.rng.range(0.15, 0.85);
-    const m = this.rng.range(2, 5);
+    const m = this.rng.range(5, 12);
     const x = e === 'W' ? r.x0 + m : e === 'E' ? r.x1 - m : r.x0 + (r.x1 - r.x0) * t;
     const z = e === 'N' ? r.z0 + m : e === 'S' ? r.z1 - m : r.z0 + (r.z1 - r.z0) * t;
     if (!nav.isFree(x, z)) return null;
     const pos = new THREE.Vector3(x, g.y + EYE, z);
     const out = { N: [0, -1], S: [0, 1], W: [-1, 0], E: [1, 0] }[e];
-    const target = this.rng.chance(0.6) ? this.horizon(pos) : pos.clone().add(new THREE.Vector3(out[0] * 200, this.rng.range(-24, 8), out[1] * 200));
+    const target = this.rng.chance(0.6) ? this.horizon(pos).setY(pos.y - this.rng.range(8, 30)) : pos.clone().add(new THREE.Vector3(out[0] * 200, this.rng.range(-26, -6), out[1] * 200));
     const fov = this.rng.range(55, 70);
     return {
       kind: 'vista',
@@ -173,21 +207,21 @@ export class RooftopPlanner {
 
   // Low shot on a roof toward a housing, billboard, garden or plant.
   detail() {
-    const f = this.focus(['housing', 'billboard', 'garden', 'plant', 'solar', 'link', 'helipad']);
+    const f = this.focus(['core', 'billboard', 'garden', 'plant', 'services', 'wall', 'solar', 'link', 'helipad']);
     if (!f) return null;
     const g = this.o.roofGroups.find((q) => q.rects.some((r) => f.x > r.x0 - 3 && f.x < r.x1 + 3 && f.z > r.z0 - 3 && f.z < r.z1 + 3) && Math.abs(q.y - f.y) < 8);
     if (!g) return null;
     const nav = this.o.navs[g.id];
     for (let i = 0; i < 8; i++) {
       const a = this.rng.range(0, Math.PI * 2);
-      const d = this.rng.range(6, 16);
+      const d = this.rng.range(5, 13);
       const x = f.x + Math.cos(a) * d;
       const z = f.z + Math.sin(a) * d;
       if (!nav.isFree(x, z)) continue;
       const pos = new THREE.Vector3(x, g.y + EYE, z);
       const target = new THREE.Vector3(f.x, f.y + this.rng.range(0, 2), f.z);
       const fov = this.rng.range(58, 72);
-      return { kind: 'detail', zone: `detail${g.id}`, pos, target, fov, duration: this.rng.range(12, 18), prefs: { minCenter: 3, maxClose: 0.4 }, motion: this.track(nav, pos, target, fov, this.rng.range(0.12, 0.25)) };
+      return { kind: 'detail', zone: `detail${g.id}-${Math.round(f.x)}`, pos, target, fov, duration: this.rng.range(12, 18), prefs: { roof: true, minCenter: 3, maxClose: 0.4 }, motion: this.track(nav, pos, target, fov, this.rng.range(0.12, 0.25)) };
     }
     return null;
   }
@@ -220,11 +254,12 @@ export class RooftopPlanner {
   random(kinds) {
     const w = (k, base) => base * (this.visited.has(k) ? 0.3 : 1);
     const gens = {
-      walk: w('walk', 3),
-      cross: w('cross', this.o.linkPaths.length ? 1.6 : 0),
-      vista: w('vista', 2.4),
-      detail: w('detail', 2.2),
-      lookup: w('lookup', this.o.plan.lots.some((l) => l.tower) ? 0.8 : 0),
+      across: w('across', 3.4),
+      walk: w('walk', 2.2),
+      detail: w('detail', 2.4),
+      cross: w('cross', this.o.linkPaths.length ? 1.2 : 0),
+      vista: w('vista', 0.5),
+      lookup: w('lookup', this.o.plan.lots.some((l) => l.tower) ? 0.3 : 0),
     };
     const kind = kinds ? this.rng.pick(kinds) : this.rng.weighted(Object.entries(gens));
     let best = null;
@@ -243,7 +278,7 @@ export class RooftopPlanner {
       }
     }
     if (!best) {
-      if (kind !== 'vista') return this.random(['vista']);
+      if (kind !== 'across') return this.random(['across']);
       return this.hero();
     }
     return this.commit(best);
@@ -260,10 +295,10 @@ export class RooftopPlanner {
     let best = null;
     let bestScore = -Infinity;
     for (let i = 0; i < 24; i++) {
-      const s = this.vista();
+      const s = i < 18 ? this.across() : this.vista();
       if (!s) continue;
       const ev = this.evaluate(s.pos, s.target, s.fov);
-      const sc = this.score(ev, s.prefs) + ev.far;
+      const sc = this.score(ev, s.prefs);
       if (sc > bestScore) {
         bestScore = sc;
         best = s;

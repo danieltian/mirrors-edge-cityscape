@@ -8,6 +8,7 @@ import * as MT from '../mall/textures.js';
 import * as RT from './textures.js';
 import { generateRooftop, ROOF_ACCENTS } from './generator.js';
 import { createFans, createSteam } from './effects.js';
+import { weather, wallMaterial } from './shading.js';
 
 // Builds a rooftop world: materials, merged meshes, the city and harbour
 // around it, spinning fans and drifting steam, a walkable grid for every
@@ -16,9 +17,13 @@ import { createFans, createSteam } from './effects.js';
 
 const UV_SCALE = {
   roofTile: 2.4,
+  white: 2.4,
   ribbed: 1.2,
   louver: 1,
   grate: 1.2,
+  galv: 1.2,
+  cabinet: [2.4, 1.2],
+  planks: [2.4, 1.2],
   concrete: [4.8, 2.4],
   curtain: [3, 7.2],
 };
@@ -32,6 +37,10 @@ function createMaterials(o) {
   const gr = RT.grate();
   const conc = TX.concrete();
   const facade = TX.facadeAtlas();
+  const pl = RT.plaster();
+  const gv = RT.galvanized();
+  const cab = RT.cabinet();
+  const pk = RT.planks();
   const own = { ads: [0, 1, 2].map(() => MT.billboard(rng, rng.pick(['#e8363c', '#1f6fe0', '#ff7a1a', '#16a8a0', '#f2c230']), '#ffffff')) };
   const std = (p, ud = {}) => {
     const m = new THREE.MeshStandardMaterial(p);
@@ -41,22 +50,26 @@ function createMaterials(o) {
   const noShadow = { castShadow: false };
   const [a, b2, c] = o.style.accents.map((k) => ROOF_ACCENTS[k]);
   const m = {
-    white: std({ color: white, roughness: 0.7 }),
+    white: weather(std({ color: white, map: pl.map, normalMap: pl.normalMap, roughness: 0.75 }), 0.6),
     whiteGloss: std({ color: white, roughness: 0.3 }),
     black: std({ color: '#161719', roughness: 0.5 }),
     blackGloss: std({ color: '#0e0f11', roughness: 0.12, metalness: 0.2 }),
     metal: std({ color: '#cfd3d8', metalness: 1, roughness: 0.45 }),
     steel: std({ color: '#b9bec4', metalness: 0.6, roughness: 0.4 }),
     darkMetal: std({ color: '#3a3e43', metalness: 0.7, roughness: 0.4 }),
-    roofTile: std({ map: tiles.map, normalMap: tiles.normalMap, roughnessMap: tiles.roughnessMap, roughness: 1 }),
-    ribbed: std({ map: rib.map, normalMap: rib.normalMap, roughness: 0.55, metalness: 0.15 }),
+    roofTile: weather(std({ map: tiles.map, normalMap: tiles.normalMap, roughnessMap: tiles.roughnessMap, roughness: 1 }), 0.55),
+    ribbed: weather(std({ map: rib.map, normalMap: rib.normalMap, roughness: 0.55, metalness: 0.15 }), 0.5),
+    galv: weather(std({ map: gv.map, normalMap: gv.normalMap, roughnessMap: gv.roughnessMap, roughness: 1, metalness: 0.55 }), 0.35),
+    cabinet: weather(std({ map: cab.map, normalMap: cab.normalMap, roughness: 0.55, metalness: 0.15 }), 0.4),
+    planks: std({ map: pk.map, normalMap: pk.normalMap, roughness: 0.9 }),
+    chainLink: std({ map: RT.chainLink(), alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.4, metalness: 0.6 }, noShadow),
     louver: std({ map: lou.map, normalMap: lou.normalMap, roughness: 0.6 }),
     grate: std({ map: gr.map, normalMap: gr.normalMap, roughness: 0.6, metalness: 0.5 }),
     fanWell: std({ color: '#1f2124', roughness: 0.8 }, noShadow),
     fanGrille: std({ map: RT.fanGrille(), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.4, metalness: 0.6 }, noShadow),
     solar: std({ map: RT.solar(), roughness: 0.2, metalness: 0.3 }),
     helipad: std({ map: RT.helipad(), roughness: 0.8 }, noShadow),
-    concrete: std({ map: conc.map, normalMap: conc.normalMap, roughness: 0.9 }),
+    concrete: weather(std({ map: conc.map, normalMap: conc.normalMap, roughness: 0.9, color: '#e8e6e2' }), 0.5),
     curtain: std({ map: RT.curtain(), roughness: 0.08, metalness: 0.85, color: '#9fb4cc' }),
     glass: std({ color: '#e3f0f6', transparent: true, opacity: 0.18, roughness: 0.03, depthWrite: false }, noShadow),
     glassRoof: std({ color: '#cfe4f0', transparent: true, opacity: 0.35, roughness: 0.05, metalness: 0.3, depthWrite: false, side: THREE.DoubleSide }, noShadow),
@@ -77,13 +90,16 @@ function createMaterials(o) {
     ad0: std({ map: own.ads[0], emissive: '#ffffff', emissiveMap: own.ads[0], emissiveIntensity: 0.25, roughness: 0.5 }, noShadow),
     ad1: std({ map: own.ads[1], emissive: '#ffffff', emissiveMap: own.ads[1], emissiveIntensity: 0.25, roughness: 0.5 }, noShadow),
     ad2: std({ map: own.ads[2], emissive: '#ffffff', emissiveMap: own.ads[2], emissiveIntensity: 0.25, roughness: 0.5 }, noShadow),
-    facade0: facadeMaterial(facade, 0.1, '#f2f2f0'),
-    facade1: facadeMaterial(facade, 0.35, '#eef0f2'),
-    facade2: facadeMaterial(facade, 0.6, '#f0ede8'),
-    facade3: facadeMaterial(facade, 0.9, '#e8edf2'),
+    // The block's walls: glazed tiles, panels with ribbon windows, render,
+    // tall narrow windows in tiles.
+    wall0: wallMaterial(RT.cladding('tile'), { pitch: 2.4, width: 1.25, height: 1.55, storey: 3.4 }, { roughness: 0.4 }),
+    wall1: wallMaterial(RT.cladding('panel'), { height: 1.35, storey: 3.6, sill: 1.0, ribbon: true }, { color: '#f4f5f6', roughness: 0.55 }),
+    wall2: wallMaterial(RT.cladding('render'), { pitch: 3.0, width: 1.5, height: 1.7, storey: 3.5 }, { color: '#fbf8f2', roughness: 0.85 }),
+    wall3: wallMaterial(RT.cladding('tile'), { pitch: 1.8, width: 0.9, height: 1.9, storey: 3.3 }, { color: '#eef1f4', roughness: 0.45 }),
     skyline: facadeMaterial(facade),
   };
-  const glossy = { curtain: 1.4, glassDark: 1.2, water: 1.5, blackGloss: 1, metal: 1, steel: 0.8, darkMetal: 0.8, solar: 1, glass: 2, glassRoof: 1.5, whiteGloss: 0.5, fanGrille: 0.8 };
+  // (Walls scale their own reflections: full on the glass, a little on the cladding.)
+  const glossy = { curtain: 1.4, glassDark: 1.2, water: 1.5, blackGloss: 1, metal: 1, steel: 0.8, darkMetal: 0.8, solar: 1, glass: 2, glassRoof: 1.5, whiteGloss: 0.5, fanGrille: 0.8, galv: 0.8, chainLink: 0.6, wall0: 1, wall1: 1, wall2: 1, wall3: 1 };
   for (const [k, mat] of Object.entries(m)) if (mat.isMeshStandardMaterial) mat.envMapIntensity = glossy[k] ?? 0.1;
   const accentKeys = ['accentA', 'accentB', 'accentC'];
   const original = Object.fromEntries(accentKeys.map((k) => [k, m[k].color.clone()]));

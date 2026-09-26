@@ -98,19 +98,23 @@ In Drift the camera rides the escalators, leans over the railings, walks the gal
 A block of city rooftops in the style of Mirror's Edge's runner routes, generated from a seed (`src/rooftop/`):
 - **The block:** a 3×3 to 4×4 grid of buildings a few storeys apart in height, some sharing party walls, some split by alleys or a street. The odd dark glass tower rises out of it. Roofs at the same height across a party wall join into one.
 - **Getting between roofs:** steel service stairs up the taller building's wall to a landing over its parapet, grated walkways across the alleys, ladders where the climb is too tall, and red ziplines.
-- **On the roofs:**
-  - white tiled roofs behind parapets with white coping, sometimes glass balustrades
-  - stair and lift housings in ribbed white cladding with a coloured band, a door, a lamp and a wall unit
-  - condenser units and AC boxes whose fans spin behind their wire guards, ducts on stands, pipe runs (one sometimes in runner-vision red), and mushroom vents, exhaust stacks, goosenecks and tall boiler flues
-  - white steam drifting off stacks, vents, flues and cooling towers (and a few roofs out in the city), carried off by the same wind as the clouds
-  - water tanks, cooling towers, solar arrays, pyramid, ridge and grille skylights, antenna masts with dishes, billboards on steel frames and sometimes a helipad
-  - a few runner-vision red ramps
-  - now and then a Catalyst-style terrace with blossom trees in black planters, a black reflecting pool and white benches
+- **The buildings:** walls in glazed tiles, flat panels or render, with whole windows laid out on every face (frames, dark glass that reflects the sky, the odd blind), up to a paved roof behind parapets with a coping, sometimes a glass balustrade.
+- **Each roof is laid out like a real one:**
+  - a stair and lift core against one edge: ribbed cladding with a coloured band, a door with a canopy and lamp, a louvre, a wall unit, vents and sometimes a mast on top, and a clear apron at the door
+  - a band of plant along the opposite edge: condensers in a row on a concrete pad inside a chain-link fence with a gate; packaged units or condensers up on a steel platform with railings and a stair; an air handling unit whose galvanised duct rises off it, runs along the side of the roof on supports and into the side of the core; a cooling tower on a tall stand; water tanks
+  - a pipe rack of two to four pipes (steel, insulated white, painted) running from the plant along the side of the roof to the core, turning together at the corners, dropping into a curb at one end and rising up the core wall at the other, with a little step-over stair half way along the long run
+  - round the other edges: rows of AC units against the parapet, long low pipe runs, billboards on steel frames facing the street
+  - down the middle: skylights (glass pyramids, glazed ridges or grilles) and vents in rows, sometimes a solar array or a boiler flue
+  - the walls of taller neighbours: switchback fire escapes climbing them, split AC units on brackets with their pipe covers, billboards fixed high up, tube-and-board scaffolding; and fire escapes up the walls across the alleys
+  - fans that spin behind their wire guards, and white steam off stacks, vents, flues and cooling towers (and a few roofs out in the city), carried off by the same wind as the clouds
+  - a few runner-vision red ramps, sometimes a helipad on the tallest roof, and now and then a Catalyst-style terrace with blossom trees in black planters, a black reflecting pool and white benches
+- **Surfaces:** textures are drawn in code and weathered: pavers with dirt settled along the grout, water marks, chips and cracks; tiles and panels with rain streaks; stained render; ribbed cladding with streaks under its fixings; galvanised ducts with seams and spangle; equipment cabinets with doors, handles, plates and grilles; chain-link; scaffold boards. On top of those, grime in world space (blotches on flat surfaces, streaks down walls) keeps the repeats from showing.
+- **No flicker:** no two surfaces in the block or the city around it overlap in the same plane, the distant windows are box-filtered, and the rooftop camera's near plane is 0.3 m, so nothing z-fights at a distance even with a 24-bit depth buffer.
 - **Colour:** three accent colours per world (orange, lime, blue, yellow, teal or magenta) for the housing bands, stairs, walkways and tanks, against white.
 - **Light:** hard sun with crisp shadows and blue shade on the white roofs, as in the game.
 - **Around it:** the city spreads out on a street grid. Near the block its roofs stay close to the block's height so the view runs across rooftops, and taller towers rise further off. Every building has its own facade (`src/render/facades.js`): glass curtain walls in blue, teal, green, bronze or silver, punched windows in render, stone or brick, ribbon windows between spandrel bands, glass between piers, or a deep concrete grid, with shopfronts at street level and a cornice at the top. There are tower cranes, a red and white TV mast on the skyline, and the harbour beyond a shoreline, all under the same cloudy sky (with the odd plane) as the mall. Glass and water reflect that sky.
 
-In Drift the view is always at eye level on a roof, never out in mid-air, and moves the way the other worlds' cameras do: a slow walk across a roof, over a walkway or up a service stair to the next roof, or a slow sideways drift (only where the roof is clear) a few steps back from a parapet looking out over the city or the harbour, past housings and plant, or up a glass tower. Isometric shows the whole block with the distant city hidden.
+In Drift the view is always at eye level on a roof, never out in mid-air, and mostly about the roofs themselves. It moves the way the other worlds' cameras do: a slow sideways drift (only where the roof is clear) at the side of a roof looking across it at its plant, core, pipes and ducts or a neighbour's dressed wall, or close by a piece of plant; a slow walk across a roof, over a walkway or up a service stair to the next roof; and now and then a view out over the city from well back on a roof, or up a glass tower. Candidate views are scored on how much of the frame is roof rather than distant skyline. Isometric shows the whole block with the distant city hidden.
 
 ## Music
 
@@ -191,7 +195,8 @@ To check the production build locally, run `npm run build && npm run preview`. F
 **Rooftops** (`src/rooftop/`)
 - `plan.js`: the grid of lots, their heights and towers, and the links between neighbouring roofs.
 - `generator.js`: buildings, parapets, stairs, walkways, ladders and ziplines, roof contents, cranes, the TV mast and the city plan.
-- `props.js`, `textures.js`: rooftop furniture and its canvas-drawn surfaces.
+- `props.js`, `textures.js`: rooftop furniture (housings, plant, platforms, fences, ducts, pipe racks, fire escapes, scaffolding and more) and its canvas-drawn surfaces.
+- `shading.js`: world-space weathering, and the wall material that lays whole windows out on each face.
 - `effects.js`: the spinning fan blades (one instanced mesh) and the steam (stateless GPU particles).
 - `shots.js`: the rooftop viewpoint planner.
 - `index.js`: materials, land and sea, walkable grids per roof level and collision.

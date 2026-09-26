@@ -58,11 +58,14 @@ export function planSkyline(rng, { site, groundY = 0, radius = 1100, downtown = 
     const w = x1 - x0;
     const d = z1 - z0;
     const pc = look ? look.wall : '#f4f4f2';
+    // Parapets; the side ones fit between the others, so no faces overlap
+    // (overlapping, coplanar faces flicker at a distance).
     box(plain, x0, y, z0, x1, y + 1.1, z0 + 0.35, pc);
     box(plain, x0, y, z1 - 0.35, x1, y + 1.1, z1, pc);
-    box(plain, x0, y, z0, x0 + 0.35, y + 1.1, z1, pc);
-    box(plain, x1 - 0.35, y, z0, x1, y + 1.1, z1, pc);
+    box(plain, x0, y, z0 + 0.35, x0 + 0.35, y + 1.1, z1 - 0.35, pc);
+    box(plain, x1 - 0.35, y, z0 + 0.35, x1, y + 1.1, z1 - 0.35, pc);
     const n = big ? rng.int(1, 3) : rng.int(2, 6);
+    const placed = [];
     for (let i = 0; i < n; i++) {
       const bw = big ? rng.range(0.25, 0.45) * w : rng.range(1.6, 4);
       const bd = big ? rng.range(0.25, 0.45) * d : rng.range(1.2, 3);
@@ -70,6 +73,8 @@ export function planSkyline(rng, { site, groundY = 0, radius = 1100, downtown = 
       if (bw > w - 2 || bd > d - 2) continue;
       const cx = rng.range(x0 + 1 + bw / 2, x1 - 1 - bw / 2);
       const cz = rng.range(z0 + 1 + bd / 2, z1 - 1 - bd / 2);
+      if (placed.some((q) => cx - bw / 2 < q[2] + 0.3 && cx + bw / 2 > q[0] - 0.3 && cz - bd / 2 < q[3] + 0.3 && cz + bd / 2 > q[1] - 0.3)) continue;
+      placed.push([cx - bw / 2, cz - bd / 2, cx + bw / 2, cz + bd / 2]);
       box(plain, cx - bw / 2, y, cz - bd / 2, cx + bw / 2, y + bh, cz + bd / 2, rng.pick(['#f6f6f4', '#e8eaec', '#dfe2e5']));
       if (realistic && rng.chance(big ? 0.07 : 0.01)) plumes.push({ x: cx, y: y + bh + 0.2, z: cz, r: Math.min(bw, bd) * 0.3, size: big ? rng.range(4, 7) : rng.range(2, 3.5) });
     }
@@ -77,6 +82,7 @@ export function planSkyline(rng, { site, groundY = 0, radius = 1100, downtown = 
       const cx = (x0 + x1) / 2 + rng.range(-0.2, 0.2) * w;
       const cz = (z0 + z1) / 2 + rng.range(-0.2, 0.2) * d;
       const s = rng.range(0.5, 0.9);
+      if (placed.some((q) => cx - s < q[2] + 0.2 && cx + s > q[0] - 0.2 && cz - s < q[3] + 0.2 && cz + s > q[1] - 0.2)) return;
       box(plain, cx - s, y, cz - s, cx + s, y + rng.range(10, 30), cz + s, '#e9ebed');
     }
   };
@@ -130,8 +136,9 @@ export function planSkyline(rng, { site, groundY = 0, radius = 1100, downtown = 
       } else {
         const tw = w * k;
         const td = d * rng.range(0.5, 0.75);
-        const tx = cx + rng.range(-0.5, 0.5) * (w - tw);
-        const tz = cz + rng.range(-0.5, 0.5) * (d - td);
+        // Kept clear of the podium's edges (and its parapets).
+        const tx = cx + rng.range(-0.5, 0.5) * Math.max(0, w - tw - 1.4);
+        const tz = cz + rng.range(-0.5, 0.5) * Math.max(0, d - td - 1.4);
         box(facades, tx - tw / 2, G + ph, tz - td / 2, tx + tw / 2, G + h, tz + td / 2, c, L);
         if (near) roof(tx - tw / 2, tz - td / 2, tx + tw / 2, tz + td / 2, G + h, true, L);
       }

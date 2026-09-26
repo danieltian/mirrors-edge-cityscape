@@ -19,7 +19,7 @@ const _v = new THREE.Vector3();
 function normalise(g) {
   const out = g.index ? g.toNonIndexed() : g;
   for (const name of Object.keys(out.attributes)) {
-    if (name !== 'position' && name !== 'normal' && name !== 'uv') out.deleteAttribute(name);
+    if (name !== 'position' && name !== 'normal' && name !== 'uv' && name !== 'aFace') out.deleteAttribute(name);
   }
   if (!out.attributes.normal) out.computeVertexNormals();
   if (!out.attributes.uv) out.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(out.attributes.position.count * 2), 2));
@@ -65,6 +65,44 @@ export class Builder {
     if (w <= 1e-4 || h <= 1e-4 || d <= 1e-4) return;
     const g = new THREE.BoxGeometry(w, h, d);
     g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+    this.push(key, g);
+    if (collide) this.collider(x0, y0, z0, x1, y1, z1);
+  }
+
+  // A box whose faces carry uv in metres from their corner and aFace = the
+  // face's width and height, for materials that lay things out per face
+  // (e.g. whole windows centred on each wall). Keys used with it must only
+  // ever get faceBoxes (every part of a bucket needs the same attributes).
+  faceBox(key, x0, y0, z0, x1, y1, z1, collide = true) {
+    const W = x1 - x0;
+    const H = y1 - y0;
+    const D = z1 - z0;
+    if (W <= 1e-4 || H <= 1e-4 || D <= 1e-4) return;
+    const g = new THREE.BoxGeometry(W, H, D).translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+    const pos = g.attributes.position;
+    const nor = g.attributes.normal;
+    const uv = g.attributes.uv;
+    const face = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i) - x0;
+      const y = pos.getY(i) - y0;
+      const z = pos.getZ(i) - z0;
+      let fw;
+      let fh;
+      if (Math.abs(nor.getY(i)) > 0.5) {
+        uv.setXY(i, x, z);
+        [fw, fh] = [W, D];
+      } else if (Math.abs(nor.getX(i)) > 0.5) {
+        uv.setXY(i, z, y);
+        [fw, fh] = [D, H];
+      } else {
+        uv.setXY(i, x, y);
+        [fw, fh] = [W, H];
+      }
+      face[i * 2] = fw;
+      face[i * 2 + 1] = fh;
+    }
+    g.setAttribute('aFace', new THREE.Float32BufferAttribute(face, 2));
     this.push(key, g);
     if (collide) this.collider(x0, y0, z0, x1, y1, z1);
   }

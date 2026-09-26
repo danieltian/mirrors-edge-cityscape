@@ -140,12 +140,12 @@ export class RiverMotion {
 }
 
 // Walk along a smoothed path (e.g. through office doorways), easing in and
-// out and looking a little way ahead.
+// out and looking a little way ahead (and `dip` metres down).
 export class PathMotion {
-  constructor({ points, speed = 1.1, fov = 65, lookAhead = 2.4, clearance = 0 }) {
+  constructor({ points, speed = 1.1, fov = 65, lookAhead = 2.4, clearance = 0, dip = 0.15 }) {
     this.curve = new THREE.CatmullRomCurve3(points, false, 'centripetal', 0.5);
     this.len = this.curve.getLength();
-    Object.assign(this, { speed, fov, lookAhead, clearance });
+    Object.assign(this, { speed, fov, lookAhead, clearance, dip });
     this.s = 0;
     this.done = false;
     this.look = null;
@@ -160,7 +160,7 @@ export class PathMotion {
     const ahead = this._a;
     if (this.s + this.lookAhead <= this.len) this.curve.getPointAt((this.s + this.lookAhead) / this.len, ahead);
     else ahead.copy(out.pos).addScaledVector(this.curve.getTangentAt(1, this._t), this.lookAhead);
-    ahead.y -= 0.15;
+    ahead.y -= this.dip;
     if (!this.look || dt === 0) this.look = ahead.clone();
     else this.look.lerp(ahead, 1 - Math.exp(-dt * 2.2));
     out.target.copy(this.look);

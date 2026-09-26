@@ -6,7 +6,7 @@ import { PanMotion, yawOf } from '../camera/motions.js';
 // Also used for the mall and the rooftops, with their own planners and a
 // few different limits.
 export class OfficeWorld {
-  constructor(office, { getAspect, Planner = OfficePlanner, kind = 'office', isoFrameRange = [30, 150], maxDistance = 60, flySpeed = 3.2, targetY = 0 }) {
+  constructor(office, { getAspect, Planner = OfficePlanner, kind = 'office', isoFrameRange = [30, 150], maxDistance = 60, flySpeed = 3.2, targetY = 0, near = 0.1 }) {
     this.kind = kind;
     this.office = office;
     this.planner = new Planner(office, getAspect);
@@ -21,6 +21,7 @@ export class OfficeWorld {
     this.morphDist = [3, 20];
     this.speed = flySpeed;
     this.targetY = targetY;
+    this.near = near;
   }
 
   isoAo(frame) {
@@ -36,7 +37,7 @@ export class OfficeWorld {
   }
 
   clip() {
-    return { near: 0.1, far: 3000, ao: 1.0 };
+    return { near: this.near, far: 3000, ao: 1.0 };
   }
 
   liftNeeded() {

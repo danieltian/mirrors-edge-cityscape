@@ -322,7 +322,7 @@ function buildWorld(k, seed) {
     look.sunAzimuth = roof.sun.azimuth;
     look.sunElevation = roof.sun.elevation;
     water.mesh.visible = false;
-    world = new OfficeWorld(roof, { getAspect, Planner: RooftopPlanner, kind: 'rooftop', isoFrameRange: [60, 260], maxDistance: 400, flySpeed: 9, targetY: roof.plan.base });
+    world = new OfficeWorld(roof, { getAspect, Planner: RooftopPlanner, kind: 'rooftop', isoFrameRange: [60, 260], maxDistance: 400, flySpeed: 9, targetY: roof.plan.base, near: 0.3 });
     stats.text = `${roof.plan.nx}×${roof.plan.nz} blocks · ${roof.roofs.length} roofs · ${roof.style.accents.join(', ')} · ${Math.round(performance.now() - t0)} ms`;
   } else {
     const t0 = performance.now();

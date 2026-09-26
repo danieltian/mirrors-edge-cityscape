@@ -97,9 +97,11 @@ export function cityFacadeMaterial() {
         varying vec3 vGlass;
         varying vec2 vSpan;
         float fHash( vec2 p ) { return fract( sin( dot( p, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 ); }
+        // Exact coverage of the window [lo, hi] by the pixel's footprint (a
+        // box filter), so small windows don't shimmer as the view moves.
         float fBox( vec2 f, vec2 lo, vec2 hi, vec2 w ) {
-          vec2 a = smoothstep( lo - w, lo + w, f ) - smoothstep( hi - w, hi + w, f );
-          return clamp( a.x, 0.0, 1.0 ) * clamp( a.y, 0.0, 1.0 );
+          vec2 a = clamp( ( min( f + w * 0.5, hi ) - max( f - w * 0.5, lo ) ) / w, 0.0, 1.0 );
+          return a.x * a.y;
         }`,
       )
       .replace(
@@ -119,7 +121,7 @@ export function cityFacadeMaterial() {
             vec2 cell = vec2( along / pitch, ( y - lobby ) / storey );
             vec2 f = fract( cell );
             vec2 id = floor( cell );
-            vec2 w = min( fwidth( cell ), vec2( 0.5 ) );
+            vec2 w = max( fwidth( cell ), vec2( 1e-4 ) );
             float g;
             vec3 spandrel = diffuseColor.rgb;
             if ( kind < 0.5 ) {
@@ -137,7 +139,7 @@ export function cityFacadeMaterial() {
             if ( y < lobby ) {
               // Shopfronts / lobby glazing along the street.
               vec2 sf = vec2( fract( along / ( pitch * 2.0 ) ), y / lobby );
-              g = fBox( sf, vec2( 0.04, 0.06 ), vec2( 0.96, 0.8 ), min( fwidth( sf ), vec2( 0.5 ) ) );
+              g = fBox( sf, vec2( 0.04, 0.06 ), vec2( 0.96, 0.8 ), max( fwidth( sf ), vec2( 1e-4 ) ) );
               id = vec2( floor( along / ( pitch * 2.0 ) ), -7.0 );
               spandrel = diffuseColor.rgb * 0.8;
             }
